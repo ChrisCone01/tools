@@ -221,36 +221,46 @@ document.getElementById('autoBtn').onclick = () => {
   if (maxY <= minY) return;
 
   const objH = maxY - minY;
-  // 脚底区域：最下方10%
-  const botThresh = maxY - objH * 0.10;
-  // 身体中段区域：40%~60%
-  const midTop = minY + objH * 0.40;
-  const midBot = minY + objH * 0.60;
-
-  let botXs = [], botYs = [], midXs = [], midYs = [];
-  for (let y = 0; y < H; y++) {
+  // 脚底区域：最下方5%的像素中心
+  const botThresh = maxY - objH * 0.05;
+  let botSumX = 0, botCount = 0;
+  for (let y = Math.floor(botThresh); y <= maxY; y++) {
+    for (let x = 0; x < W; x++) {
+      if (data[(y * W + x) * 4 + 3] > 10) { botSumX += x; botCount++; }
+    }
+  }
+  // 头顶最高点的 x 坐标
+  let topY = minY;
+  let topMinX = W, topMaxX = 0;
+  for (let x = 0; x < W; x++) {
+    if (data[(topY * W + x) * 4 + 3] > 10) {
+      if (x < topMinX) topMinX = x;
+      if (x > topMaxX) topMaxX = x;
+    }
+  }
+  // 向下扩展几行确保取到头顶区域
+  for (let y = minY; y < minY + Math.max(3, objH * 0.02); y++) {
     for (let x = 0; x < W; x++) {
       if (data[(y * W + x) * 4 + 3] > 10) {
-        if (y >= botThresh) { botXs.push(x); botYs.push(y); }
-        if (y >= midTop && y <= midBot) { midXs.push(x); midYs.push(y); }
+        if (x < topMinX) topMinX = x;
+        if (x > topMaxX) topMaxX = x;
       }
     }
   }
-  if (botXs.length === 0 || midXs.length === 0) return;
 
-  const avg = arr => arr.reduce((a, b) => a + b, 0) / arr.length;
-  const botCx = avg(botXs), botCy = avg(botYs);
-  const midCx = avg(midXs), midCy = avg(midYs);
+  if (botCount === 0) return;
+  const botCx = botSumX / botCount;
+  const topCx = (topMinX + topMaxX) / 2;
 
-  // 从脚底中心到身体中段中心的连线角度
-  const angle = Math.atan2(midCx - botCx, botCy - midCy) * 180 / Math.PI;
+  // 从脚底中心到头顶中心的连线，偏离垂直线的角度
+  const angle = Math.atan2(topCx - botCx, maxY - minY) * 180 / Math.PI;
   const rounded = Math.round(angle * 2) / 2;
 
-  images[currentIdx].angle = rounded;
-  rotateSlider.value = rounded;
-  rotateNum.value = rounded;
+  images[currentIdx].angle = -rounded;
+  rotateSlider.value = -rounded;
+  rotateNum.value = -rounded;
   drawCanvas();
-  statusText.textContent = `自动检测: 偏移${angle.toFixed(1)}°, 已矫正`;
+  statusText.textContent = `自动检测: 偏移${angle.toFixed(1)}°, 已矫正 ${-rounded}°`;
 };
 
 // 确认并下一张
