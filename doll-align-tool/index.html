@@ -217,7 +217,31 @@ document.getElementById('autoBtn').onclick = () => {
   const footCx = foot.x;
   const footCy = foot.y;
 
-  // 对每个候选角度，旋转图片后比较左右像���数
+
+  // 找到身体部分（排除头部）：从脚底向上找到最宽的部分作为肩部
+  tctx.clearRect(0, 0, W, H);
+  tctx.drawImage(img, 0, 0);
+  const origData = tctx.getImageData(0, 0, W, H).data;
+
+  let maxWidth = 0, shoulderY = 0;
+  for (let y = footCy; y >= 0; y--) {
+    let minX = W, maxX = 0;
+    for (let x = 0; x < W; x++) {
+      if (origData[(y * W + x) * 4 + 3] > 10) {
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+      }
+    }
+    const width = maxX - minX;
+    if (width > maxWidth) {
+      maxWidth = width;
+      shoulderY = y;
+    }
+  }
+  // 身体部分：从肩部以下（肩部位置 + 10%高度作为颈部分界）
+  const bodyStartY = Math.max(0, shoulderY + Math.floor((footCy - shoulderY) * 0.1));
+
+  // 对每个候选角度，旋转图片后比较左右像素数（只统计身体部分）
   function calcBalance(angle) {
     tctx.clearRect(0, 0, W, H);
     tctx.save();
@@ -228,7 +252,7 @@ document.getElementById('autoBtn').onclick = () => {
     tctx.restore();
     const d = tctx.getImageData(0, 0, W, H).data;
     let left = 0, right = 0;
-    for (let y = 0; y < H; y++)
+    for (let y = bodyStartY; y < H; y++)
       for (let x = 0; x < W; x++)
         if (d[(y * W + x) * 4 + 3] > 10) {
           if (x < footCx) left++; else right++;

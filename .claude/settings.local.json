@@ -5,7 +5,8 @@
       "Bash(cp:*)",
       "Bash(git:*)",
       "Bash(pip install:*)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(sed:*)"
     ]
   }
 }
