@@ -125,30 +125,9 @@ function selectImage(idx) {
   drawCanvas();
 }
 
-// 获取脚底中心点（用于旋转轴心）
+// 旋转轴心：图片底部中心点
 function getFootCenter(img) {
-  const tc = document.createElement('canvas');
-  tc.width = img.width; tc.height = img.height;
-  const tctx = tc.getContext('2d');
-  tctx.drawImage(img, 0, 0);
-  const data = tctx.getImageData(0, 0, tc.width, tc.height).data;
-
-  let maxY = 0;
-  for (let y = 0; y < tc.height; y++) {
-    for (let x = 0; x < tc.width; x++) {
-      if (data[(y * tc.width + x) * 4 + 3] > 10 && y > maxY) maxY = y;
-    }
-  }
-  // 脚底区域：最下方5%的像素
-  const h = tc.height;
-  const botThresh = maxY - maxY * 0.05;
-  let sumX = 0, count = 0;
-  for (let y = Math.floor(botThresh); y <= maxY; y++) {
-    for (let x = 0; x < tc.width; x++) {
-      if (data[(y * tc.width + x) * 4 + 3] > 10) { sumX += x; count++; }
-    }
-  }
-  return { x: count > 0 ? sumX / count : tc.width / 2, y: maxY };
+  return { x: img.width / 2, y: img.height };
 }
 
 function drawCanvas() {
@@ -163,12 +142,20 @@ function drawCanvas() {
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.save();
-  // 以脚底中心为旋转轴
   ctx.translate(foot.x, foot.y);
   ctx.rotate(angle);
   ctx.translate(-foot.x, -foot.y);
   ctx.drawImage(img, 0, 0);
   ctx.restore();
+
+  // 辅助线对齐 canvas 中心
+  requestAnimationFrame(() => {
+    const guideV = document.querySelector('.guide-v');
+    const wrap = document.querySelector('.canvas-wrap');
+    const cr = canvas.getBoundingClientRect();
+    const wr = wrap.getBoundingClientRect();
+    guideV.style.left = (cr.left - wr.left + cr.width / 2) + 'px';
+  });
 }
 
 rotateSlider.oninput = () => {
@@ -206,31 +193,11 @@ document.getElementById('autoBtn').onclick = () => {
   const tctx = tc.getContext('2d');
   const W = tc.width, H = tc.height;
 
-  // 获取原始脚底中心
-  tctx.clearRect(0, 0, W, H);
-  tctx.drawImage(img, 0, 0);
-  const origData = tctx.getImageData(0, 0, W, H).data;
-  let maxY = 0;
-  for (let y = 0; y < H; y++)
-    for (let x = 0; x < W; x++)
-      if (origData[(y * W + x) * 4 + 3] > 10 && y > maxY) maxY = y;
+  // 轴心：图片底部中心
+  const footCx = W / 2;
+  const footCy = H;
 
-  let objMinY = H;
-  for (let y = 0; y < H; y++)
-    for (let x = 0; x < W; x++)
-      if (origData[(y * W + x) * 4 + 3] > 10 && y < objMinY) objMinY = y;
-
-  const objH = maxY - objMinY;
-  const botThresh = maxY - objH * 0.05;
-  let botSumX = 0, botCount = 0;
-  for (let y = Math.floor(botThresh); y <= maxY; y++)
-    for (let x = 0; x < W; x++)
-      if (origData[(y * W + x) * 4 + 3] > 10) { botSumX += x; botCount++; }
-  if (botCount === 0) return;
-  const footCx = botSumX / botCount;
-  const footCy = maxY;
-
-  // 对每个候选角度，旋转图片后从脚底画垂直线，比较左右像素数
+  // 对每个候选角度，旋转图片后比较左右像素数
   function calcBalance(angle) {
     tctx.clearRect(0, 0, W, H);
     tctx.save();
@@ -240,30 +207,13 @@ document.getElementById('autoBtn').onclick = () => {
     tctx.drawImage(img, 0, 0);
     tctx.restore();
     const d = tctx.getImageData(0, 0, W, H).data;
-
-    // 找旋转后的脚底中心 x
-    let newMaxY = 0;
+    let left = 0, right = 0;
     for (let y = 0; y < H; y++)
       for (let x = 0; x < W; x++)
-        if (d[(y * W + x) * 4 + 3] > 10 && y > newMaxY) newMaxY = y;
-    const newBotThresh = newMaxY - objH * 0.05;
-    let sx = 0, sc = 0;
-    for (let y = Math.floor(newBotThresh); y <= newMaxY; y++)
-      for (let x = 0; x < W; x++)
-        if (d[(y * W + x) * 4 + 3] > 10) { sx += x; sc++; }
-    const centerX = sc > 0 ? sx / sc : footCx;
-
-    // 从脚底向上画垂直线，统计左右像素数量
-    let left = 0, right = 0;
-    for (let y = 0; y < H; y++) {
-      for (let x = 0; x < W; x++) {
         if (d[(y * W + x) * 4 + 3] > 10) {
-          if (x < centerX) left++;
-          else right++;
+          if (x < footCx) left++; else right++;
         }
-      }
-    }
-    return { diff: left - right, total: left + right, left, right };
+    return { diff: left - right, left, right };
   }
 
   // 粗搜索：-30° ~ +30°，步长2°
