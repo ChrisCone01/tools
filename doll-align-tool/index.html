@@ -125,9 +125,28 @@ function selectImage(idx) {
   drawCanvas();
 }
 
-// 旋转轴心：图片底部中心点
+// 旋转轴心：脚底像素最低点
 function getFootCenter(img) {
-  return { x: img.width / 2, y: img.height };
+  const tc = document.createElement('canvas');
+  tc.width = img.width; tc.height = img.height;
+  const tctx = tc.getContext('2d');
+  tctx.drawImage(img, 0, 0);
+  const data = tctx.getImageData(0, 0, tc.width, tc.height).data;
+
+  // 找最下方的像素点
+  let maxY = 0, footX = tc.width / 2;
+  for (let y = tc.height - 1; y >= 0; y--) {
+    for (let x = 0; x < tc.width; x++) {
+      if (data[(y * tc.width + x) * 4 + 3] > 10) {
+        if (y > maxY) {
+          maxY = y;
+          footX = x;
+        }
+      }
+    }
+    if (maxY > 0) break; // 找到最下方像素行后停止
+  }
+  return { x: footX, y: maxY };
 }
 
 function drawCanvas() {
@@ -193,11 +212,12 @@ document.getElementById('autoBtn').onclick = () => {
   const tctx = tc.getContext('2d');
   const W = tc.width, H = tc.height;
 
-  // 轴心：图片底部中心
-  const footCx = W / 2;
-  const footCy = H;
+  // 轴心：脚底像素最低点的 x 坐标
+  const foot = getFootCenter(img);
+  const footCx = foot.x;
+  const footCy = foot.y;
 
-  // 对每个候选角度，旋转图片后比较左右像素数
+  // 对每个候选角度，旋转图片后比较左右像���数
   function calcBalance(angle) {
     tctx.clearRect(0, 0, W, H);
     tctx.save();
