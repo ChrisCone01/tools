@@ -125,20 +125,49 @@ function selectImage(idx) {
   drawCanvas();
 }
 
+// 获取脚底中心点（用于旋转轴心）
+function getFootCenter(img) {
+  const tc = document.createElement('canvas');
+  tc.width = img.width; tc.height = img.height;
+  const tctx = tc.getContext('2d');
+  tctx.drawImage(img, 0, 0);
+  const data = tctx.getImageData(0, 0, tc.width, tc.height).data;
+
+  let maxY = 0;
+  for (let y = 0; y < tc.height; y++) {
+    for (let x = 0; x < tc.width; x++) {
+      if (data[(y * tc.width + x) * 4 + 3] > 10 && y > maxY) maxY = y;
+    }
+  }
+  // 脚底区域：最下方5%的像素
+  const h = tc.height;
+  const botThresh = maxY - maxY * 0.05;
+  let sumX = 0, count = 0;
+  for (let y = Math.floor(botThresh); y <= maxY; y++) {
+    for (let x = 0; x < tc.width; x++) {
+      if (data[(y * tc.width + x) * 4 + 3] > 10) { sumX += x; count++; }
+    }
+  }
+  return { x: count > 0 ? sumX / count : tc.width / 2, y: maxY };
+}
+
 function drawCanvas() {
   if (currentIdx < 0) return;
   const item = images[currentIdx];
   const img = item.img;
   const angle = item.angle * Math.PI / 180;
+  const foot = getFootCenter(img);
 
   canvas.width = img.width;
   canvas.height = img.height;
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.save();
-  ctx.translate(canvas.width / 2, canvas.height / 2);
+  // 以脚底中心为旋转轴
+  ctx.translate(foot.x, foot.y);
   ctx.rotate(angle);
-  ctx.drawImage(img, -img.width / 2, -img.height / 2);
+  ctx.translate(-foot.x, -foot.y);
+  ctx.drawImage(img, 0, 0);
   ctx.restore();
 }
 
@@ -166,61 +195,62 @@ document.getElementById('resetBtn').onclick = () => {
   drawCanvas();
 };
 
-// 自动检测倾斜角
+// 自动检测倾斜角（以脚底为基准）
 document.getElementById('autoBtn').onclick = () => {
   if (currentIdx < 0) return;
   const item = images[currentIdx];
   const img = item.img;
 
-  // 用临时 canvas 获取像素数据
   const tc = document.createElement('canvas');
   tc.width = img.width; tc.height = img.height;
   const tctx = tc.getContext('2d');
   tctx.drawImage(img, 0, 0);
   const data = tctx.getImageData(0, 0, tc.width, tc.height).data;
+  const W = tc.width, H = tc.height;
 
-  // 找非透明像素
-  let topYs = [], topXs = [], botYs = [], botXs = [];
-  let minY = tc.height, maxY = 0;
-
-  // 先找上下边界
-  for (let y = 0; y < tc.height; y++) {
-    for (let x = 0; x < tc.width; x++) {
-      const a = data[(y * tc.width + x) * 4 + 3];
-      if (a > 10) {
+  // 找整体上下边界
+  let minY = H, maxY = 0;
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      if (data[(y * W + x) * 4 + 3] > 10) {
         if (y < minY) minY = y;
         if (y > maxY) maxY = y;
       }
     }
   }
+  if (maxY <= minY) return;
 
-  const h = maxY - minY;
-  const topThresh = minY + h * 0.15;
-  const botThresh = maxY - h * 0.15;
+  const objH = maxY - minY;
+  // 脚底区域：最下方10%
+  const botThresh = maxY - objH * 0.10;
+  // 身体中段区域：40%~60%
+  const midTop = minY + objH * 0.40;
+  const midBot = minY + objH * 0.60;
 
-  for (let y = 0; y < tc.height; y++) {
-    for (let x = 0; x < tc.width; x++) {
-      const a = data[(y * tc.width + x) * 4 + 3];
-      if (a > 10) {
-        if (y <= topThresh) { topYs.push(y); topXs.push(x); }
-        if (y >= botThresh) { botYs.push(y); botXs.push(x); }
+  let botXs = [], botYs = [], midXs = [], midYs = [];
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      if (data[(y * W + x) * 4 + 3] > 10) {
+        if (y >= botThresh) { botXs.push(x); botYs.push(y); }
+        if (y >= midTop && y <= midBot) { midXs.push(x); midYs.push(y); }
       }
     }
   }
-
-  if (topYs.length === 0 || botYs.length === 0) return;
+  if (botXs.length === 0 || midXs.length === 0) return;
 
   const avg = arr => arr.reduce((a, b) => a + b, 0) / arr.length;
-  const topCx = avg(topXs), topCy = avg(topYs);
   const botCx = avg(botXs), botCy = avg(botYs);
-  const angle = Math.atan2(botCx - topCx, botCy - topCy) * 180 / Math.PI;
+  const midCx = avg(midXs), midCy = avg(midYs);
 
+  // 从脚底中心到身体中段中心的连线角度
+  const angle = Math.atan2(midCx - botCx, botCy - midCy) * 180 / Math.PI;
   const rounded = Math.round(angle * 2) / 2;
-  images[currentIdx].angle = -rounded;
-  rotateSlider.value = -rounded;
-  rotateNum.value = -rounded;
+
+  images[currentIdx].angle = rounded;
+  rotateSlider.value = rounded;
+  rotateNum.value = rounded;
   drawCanvas();
-  statusText.textContent = `自动检测: ${angle.toFixed(1)}°, 已旋转 ${-rounded}°`;
+  statusText.textContent = `自动检测: 偏移${angle.toFixed(1)}°, 已矫正`;
 };
 
 // 确认并下一张
@@ -249,17 +279,20 @@ downloadBtn.onclick = async () => {
   const tc = document.createElement('canvas');
   const tctx = tc.getContext('2d');
 
-  // 第一遍：旋转后获取每张图的边界框
+  // 第一遍：旋转后获取每张图的边界框（以脚底为轴心旋转）
   const processed = [];
   for (const item of images) {
     const img = item.img;
     const W = img.width, H = img.height;
+    const foot = getFootCenter(img);
+
     tc.width = W; tc.height = H;
     tctx.clearRect(0, 0, W, H);
     tctx.save();
-    tctx.translate(W / 2, H / 2);
+    tctx.translate(foot.x, foot.y);
     tctx.rotate(item.angle * Math.PI / 180);
-    tctx.drawImage(img, -W / 2, -H / 2);
+    tctx.translate(-foot.x, -foot.y);
+    tctx.drawImage(img, 0, 0);
     tctx.restore();
 
     const data = tctx.getImageData(0, 0, W, H).data;
@@ -274,26 +307,28 @@ downloadBtn.onclick = async () => {
         }
       }
     }
-    processed.push({ item, foot: maxY, cx: (minX + maxX) / 2, W, H });
+    processed.push({ item, foot, foot_after: maxY, cx: (minX + maxX) / 2, W, H });
   }
 
   // 统一对齐基准
-  const maxFoot = Math.max(...processed.map(p => p.foot));
+  const maxFoot = Math.max(...processed.map(p => p.foot_after));
   const outW = processed[0].W;
   const outH = processed[0].H;
 
-  // 第二遍：绘制对齐后的图
+  // 第二遍：绘制对齐后的图（以脚底为轴心旋转 + 平移对齐）
   for (const p of processed) {
     const item = p.item;
-    const dy = maxFoot - p.foot;
+    const dy = maxFoot - p.foot_after;
     const dx = Math.round(outW / 2 - p.cx);
 
     tc.width = outW; tc.height = outH;
     tctx.clearRect(0, 0, outW, outH);
     tctx.save();
-    tctx.translate(outW / 2 + dx, outH / 2 + dy);
+    tctx.translate(dx, dy);
+    tctx.translate(p.foot.x, p.foot.y);
     tctx.rotate(item.angle * Math.PI / 180);
-    tctx.drawImage(item.img, -item.img.width / 2, -item.img.height / 2);
+    tctx.translate(-p.foot.x, -p.foot.y);
+    tctx.drawImage(item.img, 0, 0);
     tctx.restore();
 
     const blob = await new Promise(r => tc.toBlob(r, 'image/png'));
