@@ -6,7 +6,12 @@
       "Bash(git:*)",
       "Bash(pip install:*)",
       "Bash(python:*)",
-      "Bash(sed:*)"
+      "Bash(sed:*)",
+      "Bash(python3:*)",
+      "Bash(xxd:*)",
+      "Bash(node:*)",
+      "Bash(curl:*)",
+      "Bash(rm:*)"
     ]
   }
 }
