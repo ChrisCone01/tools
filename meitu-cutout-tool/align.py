@@ -1,10 +1,12 @@
 """
-娃娃图片对齐工具：旋转矫正 + 脚底对齐 + 水平居中
+娃娃图片对齐工具：旋转矫正 + 脚底对齐 + 水平居中 + 绿色背景
 """
 
 import os, sys, glob, math
 import numpy as np
 from PIL import Image
+
+GREEN_COLOR = (0, 255, 0, 255)
 
 
 def get_bbox(arr):
@@ -33,8 +35,17 @@ def get_tilt_angle(arr):
     return math.degrees(math.atan2(bot_cx - top_cx, bot_cy - top_cy))
 
 
-def align_images(input_dir, output_dir):
+def fill_green_background(rgba_arr):
+    """将RGBA数组填充绿色背景，返回RGB的Image"""
+    img = Image.fromarray(rgba_arr, "RGBA")
+    green_bg = Image.new("RGBA", img.size, GREEN_COLOR)
+    green_bg.paste(img, mask=img)
+    return green_bg.convert("RGB")
+
+
+def align_images(input_dir, output_dir, green_dir):
     os.makedirs(output_dir, exist_ok=True)
+    os.makedirs(green_dir, exist_ok=True)
 
     images = sorted(glob.glob(os.path.join(input_dir, "*.png")) +
                     glob.glob(os.path.join(input_dir, "*.PNG")))
@@ -80,10 +91,15 @@ def align_images(input_dir, output_dir):
         new_arr[dy1:dy2, dx1:dx2] = arr[sy1:sy2, sx1:sx2]
 
         fname = os.path.basename(info["path"])
+        # 保存对齐后的透明图
         Image.fromarray(new_arr, "RGBA").save(os.path.join(output_dir, fname))
+        # 保存绿色背景图
+        fill_green_background(new_arr).save(os.path.join(green_dir, fname))
         print(f"  完成: {fname}  angle={info['angle']:+.1f}°  dy={dy:+d}  dx={dx:+d}")
 
-    print(f"\n全部完成，输出在: {output_dir}")
+    print(f"\n全部完成！")
+    print(f"  对齐图: {output_dir}")
+    print(f"  绿色背景: {green_dir}")
 
 
 if __name__ == "__main__":
@@ -91,4 +107,5 @@ if __name__ == "__main__":
         print("用法: python align.py <抠图文件夹> [输出文件夹]"); sys.exit(1)
     input_dir = sys.argv[1]
     output_dir = sys.argv[2] if len(sys.argv) > 2 else os.path.join(input_dir, "aligned")
-    align_images(input_dir, output_dir)
+    green_dir = os.path.join(os.path.dirname(output_dir), "green")
+    align_images(input_dir, output_dir, green_dir)
