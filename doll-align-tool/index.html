@@ -195,7 +195,7 @@ document.getElementById('resetBtn').onclick = () => {
   drawCanvas();
 };
 
-// 自动检测倾斜角（以脚底为基准）
+// 自动检测倾斜角：从脚底画垂直线，比较左右像素面积，迭代找平衡角度
 document.getElementById('autoBtn').onclick = () => {
   if (currentIdx < 0) return;
   const item = images[currentIdx];
@@ -204,63 +204,89 @@ document.getElementById('autoBtn').onclick = () => {
   const tc = document.createElement('canvas');
   tc.width = img.width; tc.height = img.height;
   const tctx = tc.getContext('2d');
-  tctx.drawImage(img, 0, 0);
-  const data = tctx.getImageData(0, 0, tc.width, tc.height).data;
   const W = tc.width, H = tc.height;
 
-  // 找整体上下边界
-  let minY = H, maxY = 0;
-  for (let y = 0; y < H; y++) {
-    for (let x = 0; x < W; x++) {
-      if (data[(y * W + x) * 4 + 3] > 10) {
-        if (y < minY) minY = y;
-        if (y > maxY) maxY = y;
-      }
-    }
-  }
-  if (maxY <= minY) return;
+  // 获取原始脚底中心
+  tctx.clearRect(0, 0, W, H);
+  tctx.drawImage(img, 0, 0);
+  const origData = tctx.getImageData(0, 0, W, H).data;
+  let maxY = 0;
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++)
+      if (origData[(y * W + x) * 4 + 3] > 10 && y > maxY) maxY = y;
 
-  const objH = maxY - minY;
-  // 脚底区域：最下方5%的像素中心
+  let objMinY = H;
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++)
+      if (origData[(y * W + x) * 4 + 3] > 10 && y < objMinY) objMinY = y;
+
+  const objH = maxY - objMinY;
   const botThresh = maxY - objH * 0.05;
   let botSumX = 0, botCount = 0;
-  for (let y = Math.floor(botThresh); y <= maxY; y++) {
-    for (let x = 0; x < W; x++) {
-      if (data[(y * W + x) * 4 + 3] > 10) { botSumX += x; botCount++; }
-    }
-  }
-  // 头顶最高点的 x 坐标
-  let topY = minY;
-  let topMinX = W, topMaxX = 0;
-  for (let x = 0; x < W; x++) {
-    if (data[(topY * W + x) * 4 + 3] > 10) {
-      if (x < topMinX) topMinX = x;
-      if (x > topMaxX) topMaxX = x;
-    }
-  }
-  // 向下扩展几行确保取到头顶区域
-  for (let y = minY; y < minY + Math.max(3, objH * 0.02); y++) {
-    for (let x = 0; x < W; x++) {
-      if (data[(y * W + x) * 4 + 3] > 10) {
-        if (x < topMinX) topMinX = x;
-        if (x > topMaxX) topMaxX = x;
+  for (let y = Math.floor(botThresh); y <= maxY; y++)
+    for (let x = 0; x < W; x++)
+      if (origData[(y * W + x) * 4 + 3] > 10) { botSumX += x; botCount++; }
+  if (botCount === 0) return;
+  const footCx = botSumX / botCount;
+  const footCy = maxY;
+
+  // 对每个候选角度，旋转图片后从脚底画垂直线，比较左右像素数
+  function calcBalance(angle) {
+    tctx.clearRect(0, 0, W, H);
+    tctx.save();
+    tctx.translate(footCx, footCy);
+    tctx.rotate(angle * Math.PI / 180);
+    tctx.translate(-footCx, -footCy);
+    tctx.drawImage(img, 0, 0);
+    tctx.restore();
+    const d = tctx.getImageData(0, 0, W, H).data;
+
+    // 找旋转后的脚底中心 x
+    let newMaxY = 0;
+    for (let y = 0; y < H; y++)
+      for (let x = 0; x < W; x++)
+        if (d[(y * W + x) * 4 + 3] > 10 && y > newMaxY) newMaxY = y;
+    const newBotThresh = newMaxY - objH * 0.05;
+    let sx = 0, sc = 0;
+    for (let y = Math.floor(newBotThresh); y <= newMaxY; y++)
+      for (let x = 0; x < W; x++)
+        if (d[(y * W + x) * 4 + 3] > 10) { sx += x; sc++; }
+    const centerX = sc > 0 ? sx / sc : footCx;
+
+    // 从脚底向上画垂直线，统计左右像素数量
+    let left = 0, right = 0;
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        if (d[(y * W + x) * 4 + 3] > 10) {
+          if (x < centerX) left++;
+          else right++;
+        }
       }
     }
+    return { diff: left - right, total: left + right, left, right };
   }
 
-  if (botCount === 0) return;
-  const botCx = botSumX / botCount;
-  const topCx = (topMinX + topMaxX) / 2;
+  // 粗搜索：-30° ~ +30°，步长2°
+  let bestAngle = 0, bestDiff = Infinity;
+  for (let a = -30; a <= 30; a += 2) {
+    const b = calcBalance(a);
+    const d = Math.abs(b.diff);
+    if (d < bestDiff) { bestDiff = d; bestAngle = a; }
+  }
+  // 细搜索：在粗搜索结果附近 ±3°，步长0.5°
+  for (let a = bestAngle - 3; a <= bestAngle + 3; a += 0.5) {
+    const b = calcBalance(a);
+    const d = Math.abs(b.diff);
+    if (d < bestDiff) { bestDiff = d; bestAngle = a; }
+  }
 
-  // 从脚底中心到头顶中心的连线，偏离垂直线的角度
-  const angle = Math.atan2(topCx - botCx, maxY - minY) * 180 / Math.PI;
-  const rounded = Math.round(angle * 2) / 2;
-
-  images[currentIdx].angle = -rounded;
-  rotateSlider.value = -rounded;
-  rotateNum.value = -rounded;
+  const rounded = Math.round(bestAngle * 2) / 2;
+  images[currentIdx].angle = rounded;
+  rotateSlider.value = rounded;
+  rotateNum.value = rounded;
   drawCanvas();
-  statusText.textContent = `自动检测: 偏移${angle.toFixed(1)}°, 已矫正 ${-rounded}°`;
+  const bal = calcBalance(rounded);
+  statusText.textContent = `自动检测: ${rounded}° (左${bal.left} 右${bal.right})`;
 };
 
 // 确认并下一张
