@@ -51,6 +51,7 @@ input[type=file] { display: none; }
 <div class="header">
   <h2>娃娃对齐工具</h2>
   <button id="uploadBtn">上传图片</button>
+  <button id="autoAllBtn" disabled style="background:#9333ea;color:#fff">批量自动检测</button>
   <span class="info" id="statusText">请上传抠好的娃娃图片</span>
   <button id="downloadBtn" disabled>下载压缩包</button>
 </div>
@@ -102,6 +103,7 @@ function addFiles(files) {
         renderSidebar();
         if (currentIdx < 0) selectImage(0);
         statusText.textContent = `共 ${images.length} 张图片`;
+        document.getElementById('autoAllBtn').disabled = false;
       }
     };
     img.src = url;
@@ -127,148 +129,12 @@ function selectImage(idx) {
 
 // 旋转轴心：脚底像素最低点
 function getFootCenter(img) {
-  const tc = document.createElement('canvas');
-  tc.width = img.width; tc.height = img.height;
-  const tctx = tc.getContext('2d');
-  tctx.drawImage(img, 0, 0);
-  const data = tctx.getImageData(0, 0, tc.width, tc.height).data;
-
-  // 找最下方的像素点
-  let maxY = 0, footX = tc.width / 2;
-  for (let y = tc.height - 1; y >= 0; y--) {
-    for (let x = 0; x < tc.width; x++) {
-      if (data[(y * tc.width + x) * 4 + 3] > 10) {
-        if (y > maxY) {
-          maxY = y;
-          footX = x;
-        }
-      }
-    }
-    if (maxY > 0) break; // 找到最下方像素行后停止
-  }
-  return { x: footX, y: maxY };
-}
-
-function drawCanvas() {
-  if (currentIdx < 0) return;
-  const item = images[currentIdx];
-  const img = item.img;
-  const angle = item.angle * Math.PI / 180;
-  const foot = getFootCenter(img);
-
-  canvas.width = img.width;
-  canvas.height = img.height;
-
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.save();
-  ctx.translate(foot.x, foot.y);
-  ctx.rotate(angle);
-  ctx.translate(-foot.x, -foot.y);
-  ctx.drawImage(img, 0, 0);
-  ctx.restore();
-
-  // 辅助线对齐 canvas 中心
-  requestAnimationFrame(() => {
-    const guideV = document.querySelector('.guide-v');
-    const wrap = document.querySelector('.canvas-wrap');
-    const cr = canvas.getBoundingClientRect();
-    const wr = wrap.getBoundingClientRect();
-    guideV.style.left = (cr.left - wr.left + cr.width / 2) + 'px';
-  });
-}
-
-rotateSlider.oninput = () => {
-  if (currentIdx < 0) return;
-  const val = parseFloat(rotateSlider.value);
-  rotateNum.value = val;
-  images[currentIdx].angle = val;
-  drawCanvas();
-};
-rotateNum.oninput = () => {
-  if (currentIdx < 0) return;
-  let val = parseFloat(rotateNum.value) || 0;
-  val = Math.max(-45, Math.min(45, val));
-  rotateSlider.value = val;
-  images[currentIdx].angle = val;
-  drawCanvas();
-};
-
-document.getElementById('resetBtn').onclick = () => {
-  if (currentIdx < 0) return;
-  images[currentIdx].angle = 0;
-  rotateSlider.value = 0;
-  rotateNum.value = 0;
-  drawCanvas();
-};
-
-// 自动检测倾斜角：从脚底画垂直线，比较左右像素面积，迭代找平衡角度
-document.getElementById('autoBtn').onclick = () => {
-  if (currentIdx < 0) return;
-  const item = images[currentIdx];
-  const img = item.img;
-
-  const tc = document.createElement('canvas');
-  tc.width = img.width; tc.height = img.height;
-  const tctx = tc.getContext('2d');
-  const W = tc.width, H = tc.height;
-
-  // 轴心：脚底像素最低点的 x 坐标
-  const foot = getFootCenter(img);
-  const footCx = foot.x;
-  const footCy = foot.y;
-
-
-  // 只取身体下半部分（脚底到50%高度），避开头发和头部
-  tctx.clearRect(0, 0, W, H);
-  tctx.drawImage(img, 0, 0);
-  const origData = tctx.getImageData(0, 0, W, H).data;
-  let topY = 0;
-  outer: for (let y = 0; y < H; y++)
-    for (let x = 0; x < W; x++)
-      if (origData[(y * W + x) * 4 + 3] > 10) { topY = y; break outer; }
-  const bodyStartY = Math.max(0, footCy - Math.floor((footCy - topY) * 0.5));
-
-  // 对每个候选角度，旋转图片后比较左右像素数（只统计身体部分）
-  function calcBalance(angle) {
-    tctx.clearRect(0, 0, W, H);
-    tctx.save();
-    tctx.translate(footCx, footCy);
-    tctx.rotate(angle * Math.PI / 180);
-    tctx.translate(-footCx, -footCy);
-    tctx.drawImage(img, 0, 0);
-    tctx.restore();
-    const d = tctx.getImageData(0, 0, W, H).data;
-    let left = 0, right = 0;
-    for (let y = bodyStartY; y < H; y++)
-      for (let x = 0; x < W; x++)
-        if (d[(y * W + x) * 4 + 3] > 10) {
-          if (x < footCx) left++; else right++;
-        }
-    return { diff: left - right, left, right };
-  }
-
-  // 粗搜索：-30° ~ +30°，步长2°
-  let bestAngle = 0, bestDiff = Infinity;
-  for (let a = -30; a <= 30; a += 2) {
-    const b = calcBalance(a);
-    const d = Math.abs(b.diff);
-    if (d < bestDiff) { bestDiff = d; bestAngle = a; }
-  }
-  // 细搜索：在粗搜索结果附近 ±3°，步长0.5°
-  for (let a = bestAngle - 3; a <= bestAngle + 3; a += 0.5) {
-    const b = calcBalance(a);
-    const d = Math.abs(b.diff);
-    if (d < bestDiff) { bestDiff = d; bestAngle = a; }
-  }
-
-  const rounded = Math.round(bestAngle * 2) / 2;
+  const rounded = autoDetect(img);
   images[currentIdx].angle = rounded;
   rotateSlider.value = rounded;
   rotateNum.value = rounded;
   drawCanvas();
-  const bal = calcBalance(rounded);
-  statusText.textContent = `自动检测: ${rounded}° (左${bal.left} 右${bal.right})`;
-};
+  statusText.textContent = '自动检测: ' + rounded + '°';
 
 // 确认并下一张
 document.getElementById('confirmBtn').onclick = () => {
