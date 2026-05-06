@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>视频横向拼接</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, sans-serif; background: #f5f5f5; color: #333; padding: 40px 20px; }
+  h1 { text-align: center; font-size: 22px; margin-bottom: 32px; }
+  .upload-area { display: flex; gap: 20px; justify-content: center; margin-bottom: 24px; }
+  .upload-box {
+    flex: 1; max-width: 340px; border: 2px dashed #ccc; border-radius: 12px;
+    padding: 32px 20px; text-align: center; cursor: pointer; background: #fff;
+    transition: border-color .2s;
+  }
+  .upload-box:hover, .upload-box.has-file { border-color: #4f8ef7; }
+  .upload-box input { display: none; }
+  .upload-box .label { font-size: 15px; color: #888; margin-top: 8px; }
+  .upload-box .filename { font-size: 13px; color: #4f8ef7; margin-top: 6px; word-break: break-all; }
+  .preview-row { display: flex; gap: 16px; justify-content: center; margin-bottom: 24px; }
+  .preview-row video { max-width: 340px; max-height: 220px; border-radius: 8px; background: #000; }
+  .btn {
+    display: block; margin: 0 auto 16px; padding: 12px 40px;
+    background: #4f8ef7; color: #fff; border: none; border-radius: 8px;
+    font-size: 16px; cursor: pointer; transition: background .2s;
+  }
+  .btn:disabled { background: #aaa; cursor: not-allowed; }
+  .btn:hover:not(:disabled) { background: #2d6fd4; }
+  #status { text-align: center; font-size: 14px; color: #666; min-height: 22px; }
+  #download-link { display: none; text-align: center; margin-top: 16px; }
+  #download-link a {
+    padding: 10px 32px; background: #22c55e; color: #fff;
+    border-radius: 8px; text-decoration: none; font-size: 15px;
+  }
+  canvas { display: none; }
+</style>
+</head>
+<body>
+<h1>视频横向拼接</h1>
+
+<div class="upload-area">
+  <div class="upload-box" id="box1" onclick="document.getElementById('file1').click()">
+    <div style="font-size:36px">🎬</div>
+    <div class="label">点击选择左侧视频</div>
+    <div class="filename" id="name1">未选择</div>
+    <input type="file" id="file1" accept="video/*">
+  </div>
+  <div class="upload-box" id="box2" onclick="document.getElementById('file2').click()">
+    <div style="font-size:36px">🎬</div>
+    <div class="label">点击选择右侧视频</div>
+    <div class="filename" id="name2">未选择</div>
+    <input type="file" id="file2" accept="video/*">
+  </div>
+</div>
+
+<div class="preview-row">
+  <video id="v1" controls muted></video>
+  <video id="v2" controls muted></video>
+</div>
+
+<button class="btn" id="mergeBtn" disabled onclick="merge()">开始拼接</button>
+<div id="status"></div>
+<div id="download-link"><a id="dl" download="merged.mp4">下载 MP4</a></div>
+<canvas id="canvas"></canvas>
+
+<script type="module">
+import { FFmpeg } from 'https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/esm/index.js';
+import { fetchFile, toBlobURL } from 'https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.1/dist/esm/index.js';
+
+const ffmpeg = new FFmpeg();
+let loaded = false;
+let files = [null, null];
+
+async function loadFFmpeg() {
+  const base = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/esm';
+  await ffmpeg.load({
+    coreURL: await toBlobURL(`${base}/ffmpeg-core.js`, 'text/javascript'),
+    wasmURL: await toBlobURL(`${base}/ffmpeg-core.wasm`, 'application/wasm'),
+  });
+  loaded = true;
+}
+
+function setupFile(idx, input) {
+  const file = input.files[0];
+  if (!file) return;
+  files[idx] = file;
+  const vid = document.getElementById(`v${idx+1}`);
+  vid.src = URL.createObjectURL(file);
+  document.getElementById(`name${idx+1}`).textContent = file.name;
+  document.getElementById(`box${idx+1}`).classList.add('has-file');
+  if (files[0] && files[1]) document.getElementById('mergeBtn').disabled = false;
+}
+
+document.getElementById('file1').onchange = e => setupFile(0, e.target);
+document.getElementById('file2').onchange = e => setupFile(1, e.target);
+
+window.merge = async function() {
+  const btn = document.getElementById('mergeBtn');
+  const status = document.getElementById('status');
+  btn.disabled = true;
+  document.getElementById('download-link').style.display = 'none';
+
+  if (!loaded) {
+    status.textContent = '正在加载 FFmpeg...';
+    await loadFFmpeg();
+  }
+
+  status.textContent = '正在写入文件...';
+  await ffmpeg.writeFile('input0.mov', await fetchFile(files[0]));
+  await ffmpeg.writeFile('input1.mov', await fetchFile(files[1]));
+
+  ffmpeg.on('progress', ({ progress }) => {
+    status.textContent = `拼接中... ${Math.round(progress * 100)}%`;
+  });
+
+  status.textContent = '拼接中...';
+  await ffmpeg.exec([
+    '-i', 'input0.mov',
+    '-i', 'input1.mov',
+    '-filter_complex', '[0:v]scale=-2:720[v0];[1:v]scale=-2:720[v1];[v0][v1]hstack[v];[0:a][1:a]amix=inputs=2[a]',
+    '-map', '[v]', '-map', '[a]',
+    '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
+    '-c:a', 'aac',
+    '-movflags', '+faststart',
+    'output.mp4'
+  ]);
+
+  const data = await ffmpeg.readFile('output.mp4');
+  const blob = new Blob([data.buffer], { type: 'video/mp4' });
+  document.getElementById('dl').href = URL.createObjectURL(blob);
+  document.getElementById('download-link').style.display = 'block';
+  status.textContent = '完成！';
+  btn.disabled = false;
+
+  await ffmpeg.deleteFile('input0.mov');
+  await ffmpeg.deleteFile('input1.mov');
+  await ffmpeg.deleteFile('output.mp4');
+};
+</script>
+</body>
+</html>
