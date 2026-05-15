@@ -84,11 +84,27 @@ const chatData = {
     {"role":"user","content":"再做一个记录可下载的功能，下载下来是文本框格式的文件，选择这个项目的当前日期，下载这一天的对话记录","time":"2026-05-15T15:15:00"},
     {"role":"ai","content":"已添加日期选择器和下载按钮，可按项目+日期下载 .txt 格式的对话记录。","time":"2026-05-15T15:15:30"},
     {"role":"user","content":"我希望你能每次自己记录进去，而不是我让你记录你才记录","time":"2026-05-15T15:20:00"},
-    {"role":"ai","content":"明白，从现在开始每次回复都会自动把对话写入记录，不需要提醒。已写入记忆。","time":"2026-05-15T15:20:30"}
+    {"role":"ai","content":"明白，从现在开始每次回复都会自动把对话写入记录，不需要提醒。已写入记忆。","time":"2026-05-15T15:20:30"},
+    {"role":"user","content":"上传到GitHub上","time":"2026-05-15T15:25:00"},
+    {"role":"ai","content":"已推送到 GitHub。","time":"2026-05-15T15:25:30"},
+    {"role":"user","content":"你现在可以连接微信了吗，类似小龙虾那样干活","time":"2026-05-15T15:30:00"},
+    {"role":"ai","content":"不行，目前没法连接微信。没有微信的 MCP 或 API 接口。能力范围：本地文件操作、终端命令、浏览器自动化、网页工具开发。","time":"2026-05-15T15:30:30"}
   ],
   "其他": [
     {"role":"user","content":"spine有mcp可以连接吗？ps有mcp可以连吗？","time":"2026-05-15T15:00:00"},
-    {"role":"ai","content":"Spine 没有官方 MCP 集成。Photoshop 有社区开发的 MCP 服务器，可以配置连接实现自动化操作。","time":"2026-05-15T15:00:30"}
+    {"role":"ai","content":"Spine 没有官方 MCP 集成。Photoshop 有社区开发的 MCP 服务器，可以配置连接实现自动化操作。","time":"2026-05-15T15:00:30"},
+    {"role":"user","content":"我想接入ps的mcp的功能","time":"2026-05-15T15:35:00"},
+    {"role":"ai","content":"找到 photoshop-mcp-server（223 stars），Windows 专用，通过 COM 接口控制 PS。需要 pip install photoshop-mcp-server，然后配置 MCP。支持创建/打开/保存文档、操作图层、应用效果等。","time":"2026-05-15T15:35:30"},
+    {"role":"user","content":"E:\\PS2022软件地址，你自己看是什么版本的","time":"2026-05-15T15:40:00"},
+    {"role":"ai","content":"PS 2022。已安装 photoshop-mcp-server 并配置 MCP（PS_VERSION=2022）。使用时需先打开 PS，再重启对话。","time":"2026-05-15T15:40:30"},
+    {"role":"user","content":"不能在ps的窗口直接对话吗？需要在这里跟你对话吗？","time":"2026-05-15T15:45:00"},
+    {"role":"ai","content":"对，需要在外部窗口（终端或 Claude Desktop）跟我对话，我通过 MCP 远程操控 PS。PS 内没有内置聊天面板。Claude Desktop 界面更友好。","time":"2026-05-15T15:45:30"},
+    {"role":"user","content":"桌面版我好像有下载的，是这个吗？（截图 Claude Desktop Free plan）","time":"2026-05-15T15:50:00"},
+    {"role":"ai","content":"对，是 Claude Desktop。但你是 Free plan，MCP 需要 Pro。而且 Desktop 和这里是独立环境，没有记忆和文件操作能力。继续在 Claude Code 终端对话是最佳方案。","time":"2026-05-15T15:50:30"},
+    {"role":"user","content":"那就不要桌面版的，直接这里对话。但我需要新开一个窗口可以吗？","time":"2026-05-15T15:55:00"},
+    {"role":"ai","content":"可以。新开终端，cd D:\\Tools\\LS，运行 claude，进去后直接说要做什么 PS 操作就行，MCP 会自动连上。","time":"2026-05-15T15:55:30"},
+    {"role":"user","content":"比如我直接说要在ps里干嘛干嘛，新窗口里就能直接开始了？","time":"2026-05-15T15:56:00"},
+    {"role":"ai","content":"对，直接说就行。打开 PS，新窗口 cd D:\\Tools\\LS 然后 claude，进来直接说要做什么。","time":"2026-05-15T15:56:30"}
   ]
 };
 
