@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>对话记录</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, sans-serif; background: #f5f5f5; color: #333; padding: 40px 20px; }
+  h1 { text-align: center; font-size: 22px; margin-bottom: 32px; }
+  .controls { display: flex; gap: 12px; justify-content: center; margin-bottom: 24px; flex-wrap: wrap; }
+  .btn {
+    padding: 10px 24px; background: #4f8ef7; color: #fff; border: none;
+    border-radius: 8px; font-size: 14px; cursor: pointer;
+  }
+  .btn:hover { background: #2d6fd4; }
+  .btn-danger { background: #ef4444; }
+  .btn-danger:hover { background: #dc2626; }
+  .btn-export { background: #22c55e; }
+  .btn-export:hover { background: #16a34a; }
+  #chat-list { max-width: 800px; margin: 0 auto; }
+  .chat-item {
+    background: #fff; border-radius: 12px; padding: 16px 20px;
+    margin-bottom: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.06);
+  }
+  .chat-item .meta { font-size: 12px; color: #999; margin-bottom: 8px; }
+  .chat-item .content { font-size: 14px; line-height: 1.6; white-space: pre-wrap; }
+  .chat-item .role { font-weight: 600; margin-right: 8px; }
+  .role-user { color: #4f8ef7; }
+  .role-ai { color: #22c55e; }
+  .input-area {
+    max-width: 800px; margin: 24px auto 0; background: #fff;
+    border-radius: 12px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,.06);
+  }
+  .input-area textarea {
+    width: 100%; min-height: 80px; border: 1px solid #e5e7eb;
+    border-radius: 8px; padding: 10px; font-size: 14px; resize: vertical;
+    font-family: inherit;
+  }
+  .input-row { display: flex; gap: 10px; margin-top: 10px; align-items: center; }
+  .input-row select { padding: 8px 12px; border-radius: 6px; border: 1px solid #ddd; font-size: 14px; }
+  .empty { text-align: center; color: #999; padding: 60px 0; font-size: 15px; }
+</style>
+</head>
+<body>
+<h1>对话记录</h1>
+
+<div class="controls">
+  <button class="btn btn-export" onclick="exportLog()">导出 JSON</button>
+  <button class="btn btn-danger" onclick="clearAll()">清空全部</button>
+</div>
+
+<div id="chat-list"></div>
+
+<div class="input-area">
+  <textarea id="msg" placeholder="输入对话内容..."></textarea>
+  <div class="input-row">
+    <select id="role">
+      <option value="user">我</option>
+      <option value="ai">AI</option>
+    </select>
+    <button class="btn" onclick="addMsg()">添加记录</button>
+  </div>
+</div>
+
+<script>
+const STORAGE_KEY = 'chat_log_records';
+
+function getRecords() {
+  return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+}
+
+function saveRecords(records) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
+}
+
+function render() {
+  const list = document.getElementById('chat-list');
+  const records = getRecords();
+  if (!records.length) {
+    list.innerHTML = '<div class="empty">暂无对话记录</div>';
+    return;
+  }
+  list.innerHTML = records.map((r, i) => {
+    const d = new Date(r.time);
+    const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`;
+    const roleClass = r.role === 'user' ? 'role-user' : 'role-ai';
+    const roleName = r.role === 'user' ? '我' : 'AI';
+    return `<div class="chat-item">
+      <div class="meta">${dateStr} <button style="float:right;border:none;background:none;color:#999;cursor:pointer;font-size:12px" onclick="deleteMsg(${i})">删除</button></div>
+      <div class="content"><span class="role ${roleClass}">${roleName}:</span>${escapeHtml(r.content)}</div>
+    </div>`;
+  }).join('');
+}
+
+function escapeHtml(str) {
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function addMsg() {
+  const msg = document.getElementById('msg').value.trim();
+  if (!msg) return;
+  const role = document.getElementById('role').value;
+  const records = getRecords();
+  records.push({ role, content: msg, time: Date.now() });
+  saveRecords(records);
+  document.getElementById('msg').value = '';
+  render();
+}
+
+function deleteMsg(idx) {
+  const records = getRecords();
+  records.splice(idx, 1);
+  saveRecords(records);
+  render();
+}
+
+function clearAll() {
+  if (!confirm('确定清空全部对话记录？')) return;
+  saveRecords([]);
+  render();
+}
+
+function exportLog() {
+  const records = getRecords();
+  const blob = new Blob([JSON.stringify(records, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `chat-log-${new Date().toISOString().slice(0,10)}.json`;
+  a.click();
+}
+
+document.getElementById('msg').addEventListener('keydown', e => {
+  if (e.ctrlKey && e.key === 'Enter') addMsg();
+});
+
+render();
+</script>
+</body>
+</html>
