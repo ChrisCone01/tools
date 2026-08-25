@@ -1,0 +1,1850 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>图片裁剪工具 - 840×680px</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #f5f5f5;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        h1 {
+            margin-bottom: 20px;
+            color: #333;
+        }
+
+        .upload-area {
+            border: 2px dashed #ccc;
+            border-radius: 8px;
+            padding: 40px;
+            text-align: center;
+            margin-bottom: 30px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .upload-area:hover {
+            border-color: #4CAF50;
+            background: #f9f9f9;
+        }
+
+        .upload-area.dragover {
+            border-color: #4CAF50;
+            background: #e8f5e9;
+        }
+
+        #fileInput {
+            display: none;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+
+        .btn-primary {
+            background: #4CAF50;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #45a049;
+        }
+
+        .btn-secondary {
+            background: #2196F3;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #0b7dda;
+        }
+
+        .gallery {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+        }
+
+        @media (max-width: 700px) {
+            .gallery {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .image-item {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 15px;
+            background: #fafafa;
+        }
+
+        /* 显示尺寸随栏宽自适应，比例由 JS 按当前裁剪尺寸写入 CSS 变量 */
+        .crop-container {
+            width: 100%;
+            max-width: var(--crop-max, 840px);
+            aspect-ratio: var(--crop-ar, 840 / 680);
+            border: 2px solid #333;
+            margin: 0 auto 10px;
+            overflow: hidden;
+            position: relative;
+            cursor: move;
+            background: #fff;
+        }
+
+        .crop-container canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        .image-name {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 10px;
+            word-break: break-all;
+        }
+
+        .image-out {
+            font-size: 11px;
+            margin-top: 2px;
+        }
+
+        .image-out.same {
+            color: #999;
+        }
+
+        /* 格式被浏览器降级时用橙色标出来 */
+        .image-out.changed {
+            color: #e67e22;
+        }
+
+        /* 源图分辨率不够、需要放大才能填满裁剪框 */
+        .image-warn {
+            font-size: 11px;
+            margin-top: 2px;
+            color: #c0392b;
+        }
+
+        .zoom-controls {
+            display: flex;
+            gap: 5px;
+            justify-content: center;
+            margin-top: 10px;
+        }
+
+        .zoom-controls button {
+            padding: 5px 10px;
+            font-size: 12px;
+        }
+
+        .btn-remove {
+            background: #f44336;
+            color: white;
+            width: 100%;
+            margin-top: 10px;
+        }
+
+        .btn-remove:hover {
+            background: #da190b;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #999;
+        }
+
+        .section-label {
+            font-size: 12px;
+            color: #888;
+            margin: 12px 0 6px;
+        }
+
+        .logo-picker {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        /* 同一个 logo 的 1/2 两版竖着排成一列，方便对比 */
+        .logo-group {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .logo-thumb {
+            position: relative;
+            width: 72px;
+            height: 52px;
+            border: 2px solid #ddd;
+            border-radius: 4px;
+            cursor: pointer;
+            padding: 2px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: border-color 0.2s;
+        }
+
+        /* 底色按生成时实测的平均亮度决定，不按变体号猜：
+           浅色 logo 配深底，深色 logo 配浅底，否则缩略图看不见。
+           （例如莫离2 是纯黑，唐宫2 是反白，同是 2 号但需要相反的底色） */
+        .logo-thumb.on-light {
+            background: #fff url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="8" height="8" fill="%23eee"/><rect x="8" y="8" width="8" height="8" fill="%23eee"/></svg>') repeat;
+        }
+
+        .logo-thumb.on-dark {
+            background: #555 url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="8" height="8" fill="%23616161"/><rect x="8" y="8" width="8" height="8" fill="%23616161"/></svg>') repeat;
+        }
+
+        .logo-badge {
+            position: absolute;
+            top: -1px;
+            right: -1px;
+            font-size: 9px;
+            line-height: 1;
+            padding: 2px 4px;
+            border-radius: 0 3px 0 3px;
+            background: rgba(0,0,0,0.55);
+            color: #fff;
+            pointer-events: none;
+        }
+
+        .logo-thumb img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            pointer-events: none;
+        }
+
+        .logo-thumb:hover {
+            border-color: #4CAF50;
+        }
+
+        .logo-thumb.active {
+            border-color: #4CAF50;
+            box-shadow: 0 0 0 2px rgba(76,175,80,0.25);
+        }
+
+        .logo-controls {
+            display: flex;
+            gap: 5px;
+            justify-content: center;
+            margin-top: 8px;
+        }
+
+        .logo-controls button {
+            padding: 5px 10px;
+            font-size: 12px;
+        }
+
+        .hint {
+            font-size: 11px;
+            color: #999;
+            text-align: center;
+            margin-top: 6px;
+            line-height: 1.5;
+        }
+
+        .btn-done {
+            background: #4CAF50;
+            color: white;
+            width: 100%;
+            margin-top: 10px;
+        }
+
+        .btn-done:hover {
+            background: #45a049;
+        }
+
+        .image-item.done {
+            border-color: #4CAF50;
+            background: #f1f8f2;
+        }
+
+        .image-item.done .crop-container {
+            border-color: #4CAF50;
+            cursor: default;
+        }
+
+        .done-badge {
+            font-size: 12px;
+            color: #4CAF50;
+            text-align: center;
+            margin-top: 10px;
+        }
+
+        .progress {
+            font-size: 13px;
+            color: #666;
+            margin-bottom: 12px;
+        }
+
+        /* ===== 自定义裁剪尺寸 ===== */
+        .size-bar {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+            padding: 12px 15px;
+            margin-bottom: 20px;
+            background: #f7f9fb;
+            border: 1px solid #e3e8ee;
+            border-radius: 6px;
+        }
+
+        .size-bar label {
+            font-size: 13px;
+            color: #555;
+        }
+
+        .size-bar input[type="number"] {
+            width: 82px;
+            padding: 6px 8px;
+            font-size: 13px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+
+        .size-bar .times {
+            color: #999;
+        }
+
+        .size-bar button {
+            padding: 6px 12px;
+            font-size: 13px;
+        }
+
+        .preset {
+            background: #fff;
+            border: 1px solid #ccc;
+            color: #555;
+        }
+
+        .preset:hover {
+            border-color: #4CAF50;
+            color: #4CAF50;
+        }
+
+        .preset.active {
+            border-color: #4CAF50;
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+
+        .size-note {
+            flex-basis: 100%;
+            font-size: 11px;
+            color: #999;
+        }
+
+        .size-note.warn {
+            color: #c0392b;
+        }
+
+        /* ===== 编辑记录 ===== */
+        .history {
+            margin-bottom: 20px;
+            border: 1px solid #e3e8ee;
+            border-radius: 6px;
+            overflow: hidden;
+        }
+
+        .history-head {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 15px;
+            background: #f7f9fb;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .history-head .title {
+            font-size: 13px;
+            color: #555;
+            flex: 1;
+        }
+
+        .history-head .caret {
+            color: #999;
+            font-size: 11px;
+        }
+
+        .history-body {
+            padding: 12px 15px;
+            border-top: 1px solid #e3e8ee;
+        }
+
+        .history-empty {
+            font-size: 12px;
+            color: #999;
+        }
+
+        .history-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            padding: 10px 0;
+            border-bottom: 1px dashed #eee;
+        }
+
+        .history-item:last-child {
+            border-bottom: none;
+        }
+
+        .history-item .meta {
+            flex: 1;
+            font-size: 12px;
+            color: #666;
+            line-height: 1.6;
+            min-width: 0;
+        }
+
+        .history-item .meta .label {
+            color: #333;
+            font-size: 13px;
+        }
+
+        .history-item .meta .sub {
+            color: #999;
+            font-size: 11px;
+            word-break: break-all;
+        }
+
+        .history-item.autosave .meta .label::after {
+            content: ' 自动保存';
+            color: #2196F3;
+            font-size: 11px;
+        }
+
+        .history-item button {
+            padding: 5px 10px;
+            font-size: 12px;
+            flex-shrink: 0;
+        }
+
+        .btn-restore {
+            background: #2196F3;
+            color: white;
+        }
+
+        .btn-restore:hover {
+            background: #0b7dda;
+        }
+
+        .btn-drop {
+            background: #fff;
+            border: 1px solid #e0b4b0;
+            color: #c0392b;
+        }
+
+        .btn-drop:hover {
+            background: #fdecea;
+        }
+
+        /* 上次没编完的那条，在记录列表里标出来 */
+        .history-item.stale .meta .label::after {
+            content: ' 上次未完成';
+            color: #e67e22;
+            font-size: 11px;
+        }
+
+        .history-head .tip {
+            font-size: 11px;
+            color: #e67e22;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 id="pageTitle">图片裁剪工具 - 840×680px</h1>
+
+        <div class="size-bar">
+            <label for="sizeW">裁剪尺寸</label>
+            <input type="number" id="sizeW" min="16" max="8000" step="1" value="840">
+            <span class="times">×</span>
+            <input type="number" id="sizeH" min="16" max="8000" step="1" value="680">
+            <span class="times">px</span>
+            <button class="btn-secondary" onclick="applySizeFromInputs()">应用</button>
+            <button class="preset" data-w="840" data-h="680" onclick="usePreset(this)">840×680</button>
+            <button class="preset" data-w="210" data-h="170" onclick="usePreset(this)">210×170</button>
+            <button class="preset" data-w="1920" data-h="1080" onclick="usePreset(this)">1920×1080</button>
+            <button class="preset" data-w="1080" data-h="1080" onclick="usePreset(this)">1080×1080</button>
+            <div class="size-note" id="sizeNote"></div>
+        </div>
+
+        <div class="history" id="history" style="display: none;">
+            <div class="history-head" onclick="toggleHistory()">
+                <span class="title" id="historyTitle">编辑记录</span>
+                <span class="tip" id="historyTip"></span>
+                <span class="caret" id="historyCaret">▶</span>
+            </div>
+            <div class="history-body" id="historyBody" style="display: none;"></div>
+        </div>
+
+        <div class="upload-area" id="uploadArea">
+            <p style="font-size: 18px; margin-bottom: 10px;">📁 点击或拖拽上传图片</p>
+            <p style="color: #999; font-size: 14px;">支持批量上传</p>
+            <input type="file" id="fileInput" accept="image/*" multiple>
+        </div>
+
+        <div class="controls" id="controls" style="display: none;">
+            <button class="btn-secondary" onclick="downloadAll()">📥 下载全部图片</button>
+            <button class="preset" onclick="saveSnapshot()">💾 存为编辑记录</button>
+            <button class="btn-primary" onclick="clearAll()">🗑️ 清空所有</button>
+        </div>
+
+        <div class="progress" id="progress" style="display: none;"></div>
+
+        <div class="gallery" id="gallery">
+            <div class="empty-state">暂无图片，请上传</div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="logos.js"></script>
+    <script>
+        // LOGO_DATA 来自 logos.js（由 gen_logos.py 从素材目录生成的 base64 内嵌数据）
+        let logoImages = [];
+
+        function preloadLogos() {
+            if (typeof LOGO_DATA === 'undefined') {
+                console.warn('logos.js 未加载');
+                return Promise.resolve([]);
+            }
+            return Promise.all(LOGO_DATA.map(item => new Promise(resolve => {
+                const img = new Image();
+                img.onload = () => resolve({
+                    name: item.name,
+                    base: item.base,
+                    variant: item.variant,
+                    light: item.light,
+                    src: item.src,
+                    img
+                });
+                img.onerror = () => resolve(null);
+                img.src = item.src;
+            }))).then(list => {
+                logoImages = list.filter(Boolean);
+                return logoImages;
+            });
+        }
+
+        let nextId = 1;
+
+        // 裁剪尺寸，同时也是导出尺寸。可改，所以是 let 不是 const
+        const DEFAULT_CROP_W = 840;
+        const DEFAULT_CROP_H = 680;
+        const MIN_CROP = 16;
+        const MAX_CROP = 8000;
+        let cropW = DEFAULT_CROP_W;
+        let cropH = DEFAULT_CROP_H;
+
+        // 以下都按裁剪框的比例定义，改尺寸时不用跟着调
+        const LOGO_INSET_FRAC = 0.038;   // logo 默认距边距，约等于旧版 210 框下的 8px
+        const LOGO_DEFAULT_FRAC = 0.4;   // logo 默认占框宽的比例
+        const LOGO_MIN_FRAC = 0.05;      // logo 最小 / 最大占框宽的比例
+        const LOGO_MAX_FRAC = 2.0;
+
+        // 预览画布的像素倍率，按裁剪尺寸算：
+        // 小框（210 宽）要放大才看得清，大框（1920 宽）没必要按原尺寸铺画布，
+        // 否则一张 canvas 就能吃掉十几 MB，十几张叠起来几百 MB。
+        const PREVIEW_TARGET_W = 840;      // 预览画布的目标宽度，够 2 栏布局下清晰显示
+        const PREVIEW_MAX_SCALE = 3;       // 再小的框也不放大超过 3 倍
+        const PREVIEW_MAX_PIXELS = 1.6e6;  // 单张预览画布的像素上限
+
+        function previewScaleFor(w, h) {
+            if (!(w > 0 && h > 0)) return 1;
+            let s = Math.min(PREVIEW_TARGET_W / w, PREVIEW_MAX_SCALE);
+            s = Math.min(s, Math.sqrt(PREVIEW_MAX_PIXELS / (w * h)));
+            return Math.max(s, 0.05);
+        }
+
+        class ImageCropper {
+            constructor(imgSrc, name, width, height, mimeType, dataKey) {
+                this.id = nextId++;
+                this.imgSrc = imgSrc;
+                this.name = name;
+                // 记住上传时的格式，导出时原样输出，方便直接替换原文件
+                this.mimeType = mimeType || '';
+                // IndexedDB 里图片数据的键，编辑记录靠它引用原图
+                this.dataKey = dataKey || '';
+                this.img = new Image();
+                this.img.src = imgSrc;
+
+                this.cropWidth = cropW;
+                this.cropHeight = cropH;
+                this.previewScale = previewScaleFor(cropW, cropH);
+                this.srcWidth = width;
+                this.srcHeight = height;
+
+                // 计算初始缩放以填充整个框
+                const scaleX = this.cropWidth / width;
+                const scaleY = this.cropHeight / height;
+                this.scale = Math.max(scaleX, scaleY);
+                this.minScale = this.scale;
+
+                // 居中
+                this.offsetX = (this.cropWidth - width * this.scale) / 2;
+                this.offsetY = (this.cropHeight - height * this.scale) / 2;
+
+                // Logo 图层
+                this.logo = null;        // { name, img }
+                this.logoScale = 1;
+                this.logoX = 0;
+                this.logoY = 0;
+
+                this.done = false;
+            }
+
+            render() {
+                const canvas = document.createElement('canvas');
+                // 取整避免出现小数像素，再用实际像素数反推倍率，保证内容严丝合缝铺满
+                canvas.width = Math.max(1, Math.round(this.cropWidth * this.previewScale));
+                canvas.height = Math.max(1, Math.round(this.cropHeight * this.previewScale));
+                canvas.id = `canvas-${this.id}`;
+                this.drawScaleX = canvas.width / this.cropWidth;
+                this.drawScaleY = canvas.height / this.cropHeight;
+
+                this.canvas = canvas;
+                this.ctx = canvas.getContext('2d');
+                this.ctx.imageSmoothingQuality = 'high';
+
+                this.draw();
+                this.bindEvents();
+
+                return canvas;
+            }
+
+            // 换裁剪尺寸时，尽量保住当前构图：让原来框中心对准的那个源图像素，
+            // 换尺寸后还在框中心；logo 的相对大小和相对位置也一并等比搬过去
+            retarget(w, h) {
+                const oldW = this.cropWidth, oldH = this.cropHeight;
+                if (oldW === w && oldH === h) return;
+
+                // 当前框中心在源图上的坐标
+                const srcCx = (oldW / 2 - this.offsetX) / this.scale;
+                const srcCy = (oldH / 2 - this.offsetY) / this.scale;
+
+                // logo 的相对尺寸与相对中心（按新框宽等比放大，手感不变）
+                let logoFrac = 0, logoCxFrac = 0, logoCyFrac = 0;
+                if (this.logo) {
+                    logoFrac = this.logoWidth() / oldW;
+                    logoCxFrac = (this.logoX + this.logoWidth() / 2) / oldW;
+                    logoCyFrac = (this.logoY + this.logoHeight() / 2) / oldH;
+                }
+
+                this.cropWidth = w;
+                this.cropHeight = h;
+                this.previewScale = previewScaleFor(w, h);
+
+                // 新尺寸下填满框所需的最小缩放
+                this.minScale = Math.max(w / this.srcWidth, h / this.srcHeight);
+                // 原来是「刚好填满」就继续贴合新框，否则保留用户放大的倍数
+                const wasAtMin = Math.abs(this.scale - Math.max(oldW / this.srcWidth, oldH / this.srcHeight)) < 1e-6;
+                this.scale = wasAtMin ? this.minScale : Math.max(this.scale, this.minScale);
+
+                this.offsetX = w / 2 - srcCx * this.scale;
+                this.offsetY = h / 2 - srcCy * this.scale;
+                this.clampOffsets();
+
+                if (this.logo) {
+                    this.logoScale = (w * logoFrac) / this.logo.img.width;
+                    this.logoX = w * logoCxFrac - this.logoWidth() / 2;
+                    this.logoY = h * logoCyFrac - this.logoHeight() / 2;
+                    this.clampLogo();
+                }
+            }
+
+            // 从编辑记录恢复：位置、缩放、logo、完成状态原样装回去
+            applyState(s) {
+                if (!s) return;
+                if (typeof s.scale === 'number') this.scale = s.scale;
+                if (typeof s.offsetX === 'number') this.offsetX = s.offsetX;
+                if (typeof s.offsetY === 'number') this.offsetY = s.offsetY;
+                if (s.logo) {
+                    this.logo = s.logo;
+                    this.logoScale = typeof s.logoScale === 'number' ? s.logoScale : 1;
+                    this.logoX = s.logoX || 0;
+                    this.logoY = s.logoY || 0;
+                }
+                this.done = !!s.done;
+                // 记录里的缩放可能小于当前尺寸的下限（换过尺寸），这里兜一下
+                this.scale = Math.max(this.scale, this.minScale);
+                this.clampOffsets();
+                this.clampLogo();
+            }
+
+            // 背景图与 logo 的统一绘制逻辑，预览和导出共用
+            drawTo(ctx) {
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, this.cropWidth, this.cropHeight);
+
+                ctx.save();
+                ctx.translate(this.offsetX, this.offsetY);
+                ctx.scale(this.scale, this.scale);
+                ctx.drawImage(this.img, 0, 0);
+                ctx.restore();
+
+                if (this.logo) {
+                    ctx.drawImage(
+                        this.logo.img,
+                        this.logoX, this.logoY,
+                        this.logoWidth(), this.logoHeight()
+                    );
+                }
+            }
+
+            logoWidth() {
+                return this.logo ? this.logo.img.width * this.logoScale : 0;
+            }
+
+            logoHeight() {
+                return this.logo ? this.logo.img.height * this.logoScale : 0;
+            }
+
+            draw() {
+                if (!this.ctx) return;
+                this.ctx.save();
+                this.ctx.scale(this.drawScaleX || 1, this.drawScaleY || 1);
+                this.drawTo(this.ctx);
+                this.ctx.restore();
+                // 任何改动都会走到这里，顺带触发防抖自动保存
+                scheduleAutosave();
+            }
+
+            // 选择 logo：默认宽度为裁剪框的 40%，放在右下角
+            setLogo(logo) {
+                if (this.logo && this.logo.name === logo.name) {
+                    // 再次点击同一个 logo 表示取消
+                    this.logo = null;
+                    this.draw();
+                    return;
+                }
+                this.logo = logo;
+                this.logoScale = (this.cropWidth * LOGO_DEFAULT_FRAC) / logo.img.width;
+                const inset = this.cropWidth * LOGO_INSET_FRAC;
+                this.logoX = this.cropWidth - this.logoWidth() - inset;
+                this.logoY = this.cropHeight - this.logoHeight() - inset;
+                this.clampLogo();
+                this.draw();
+            }
+
+            removeLogo() {
+                this.logo = null;
+                this.draw();
+            }
+
+            isPointInLogo(x, y) {
+                if (!this.logo) return false;
+                return x >= this.logoX && x <= this.logoX + this.logoWidth() &&
+                       y >= this.logoY && y <= this.logoY + this.logoHeight();
+            }
+
+            // logo 始终保持在裁剪框内
+            clampLogo() {
+                if (!this.logo) return;
+                const w = this.logoWidth();
+                const h = this.logoHeight();
+                this.logoX = Math.max(Math.min(this.logoX, this.cropWidth - w), 0);
+                this.logoY = Math.max(Math.min(this.logoY, this.cropHeight - h), 0);
+            }
+
+            // 背景图不允许露白边（用记录下来的源图尺寸，恢复时 img 可能还没解码完）
+            clampOffsets() {
+                const w = this.srcWidth * this.scale;
+                const h = this.srcHeight * this.scale;
+                this.offsetX = Math.min(Math.max(this.offsetX, this.cropWidth - w), 0);
+                this.offsetY = Math.min(Math.max(this.offsetY, this.cropHeight - h), 0);
+            }
+
+            zoomLogo(factor) {
+                if (!this.logo) return;
+                // 以 logo 中心为基准缩放
+                const cx = this.logoX + this.logoWidth() / 2;
+                const cy = this.logoY + this.logoHeight() / 2;
+                // 上下限按占框宽的比例算，这样换裁剪尺寸时手感不变
+                const minScale = (this.cropWidth * LOGO_MIN_FRAC) / this.logo.img.width;
+                const maxScale = (this.cropWidth * LOGO_MAX_FRAC) / this.logo.img.width;
+                this.logoScale = Math.min(Math.max(this.logoScale * factor, minScale), maxScale);
+                this.logoX = cx - this.logoWidth() / 2;
+                this.logoY = cy - this.logoHeight() / 2;
+                this.clampLogo();
+                this.draw();
+            }
+
+            // 画布坐标（canvas 显示尺寸与内部像素一致，比例为 1，但仍做换算以防样式变化）
+            toCanvasPoint(e) {
+                const rect = this.canvas.getBoundingClientRect();
+                return {
+                    x: (e.clientX - rect.left) * (this.cropWidth / rect.width),
+                    y: (e.clientY - rect.top) * (this.cropHeight / rect.height)
+                };
+            }
+
+            bindEvents() {
+                this.canvas.addEventListener('mousedown', (e) => {
+                    if (this.done) return;
+                    const p = this.toCanvasPoint(e);
+                    // 按在 logo 上就拖 logo，否则拖背景图
+                    const target = this.isPointInLogo(p.x, p.y) ? 'logo' : 'image';
+                    activeDrag = {
+                        cropper: this,
+                        target,
+                        dx: target === 'logo' ? p.x - this.logoX : p.x - this.offsetX,
+                        dy: target === 'logo' ? p.y - this.logoY : p.y - this.offsetY
+                    };
+                    this.canvas.style.cursor = 'grabbing';
+                    e.preventDefault();
+                });
+
+                // 滚轮缩放：logo 上滚动缩放 logo，否则缩放背景图
+                this.canvas.addEventListener('wheel', (e) => {
+                    if (this.done) return;
+                    e.preventDefault();
+                    const p = this.toCanvasPoint(e);
+                    const factor = e.deltaY < 0 ? 1.08 : 1 / 1.08;
+                    if (this.isPointInLogo(p.x, p.y)) {
+                        this.zoomLogo(factor);
+                    } else {
+                        this.zoom(factor);
+                    }
+                }, { passive: false });
+
+                this.canvas.addEventListener('mousemove', (e) => {
+                    if (this.done || activeDrag) return;
+                    const p = this.toCanvasPoint(e);
+                    this.canvas.style.cursor = this.isPointInLogo(p.x, p.y) ? 'grab' : 'move';
+                });
+            }
+
+            dragTo(p) {
+                if (!activeDrag) return;
+                if (activeDrag.target === 'logo') {
+                    this.logoX = p.x - activeDrag.dx;
+                    this.logoY = p.y - activeDrag.dy;
+                    this.clampLogo();
+                } else {
+                    this.offsetX = p.x - activeDrag.dx;
+                    this.offsetY = p.y - activeDrag.dy;
+                    this.clampOffsets();
+                }
+                this.draw();
+            }
+
+            zoom(factor) {
+                const centerX = this.cropWidth / 2;
+                const centerY = this.cropHeight / 2;
+
+                const oldScale = this.scale;
+                // 不允许缩到比裁剪框还小，否则会露白边
+                this.scale = Math.max(this.scale * factor, this.minScale);
+
+                this.offsetX = centerX - (centerX - this.offsetX) * (this.scale / oldScale);
+                this.offsetY = centerY - (centerY - this.offsetY) * (this.scale / oldScale);
+                this.clampOffsets();
+
+                this.draw();
+            }
+
+            reset() {
+                const width = this.srcWidth;
+                const height = this.srcHeight;
+                const scaleX = this.cropWidth / width;
+                const scaleY = this.cropHeight / height;
+                this.scale = Math.max(scaleX, scaleY);
+                this.offsetX = (this.cropWidth - width * this.scale) / 2;
+                this.offsetY = (this.cropHeight - height * this.scale) / 2;
+                this.clampOffsets();
+                this.draw();
+            }
+
+            export() {
+                const exportCanvas = document.createElement('canvas');
+                exportCanvas.width = this.cropWidth;
+                exportCanvas.height = this.cropHeight;
+                this.drawTo(exportCanvas.getContext('2d'));
+                return exportCanvas;
+            }
+        }
+
+        // 全局拖动状态，避免每次重绘都往 document 上叠加监听器
+        let activeDrag = null;
+
+        document.addEventListener('mousemove', (e) => {
+            if (!activeDrag) return;
+            const c = activeDrag.cropper;
+            c.dragTo(c.toCanvasPoint(e));
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (!activeDrag) return;
+            activeDrag.cropper.canvas.style.cursor = 'move';
+            activeDrag = null;
+        });
+
+        let croppers = [];
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('fileInput');
+        const gallery = document.getElementById('gallery');
+        const controls = document.getElementById('controls');
+        const progress = document.getElementById('progress');
+        const sizeW = document.getElementById('sizeW');
+        const sizeH = document.getElementById('sizeH');
+        const sizeNote = document.getElementById('sizeNote');
+        const pageTitle = document.getElementById('pageTitle');
+
+        // ===== 自定义裁剪尺寸 =====
+
+        // 裁剪框的显示比例交给 CSS 变量，改尺寸时不用重排 DOM。
+        // 上限取预览画布的实际像素宽（不是裁剪宽）：
+        // 小尺寸也能铺满栏宽、不会缩成一小块，同时又不会被 CSS 拉超过自身分辨率变虚。
+        function applySizeCss() {
+            const root = document.documentElement.style;
+            const maxShow = Math.round(cropW * previewScaleFor(cropW, cropH));
+            root.setProperty('--crop-ar', `${cropW} / ${cropH}`);
+            root.setProperty('--crop-max', `${maxShow}px`);
+        }
+
+        function syncSizeUI() {
+            sizeW.value = cropW;
+            sizeH.value = cropH;
+            pageTitle.textContent = `图片裁剪工具 - ${cropW}×${cropH}px`;
+            document.title = pageTitle.textContent;
+            document.querySelectorAll('.preset[data-w]').forEach(b => {
+                b.classList.toggle('active',
+                    +b.dataset.w === cropW && +b.dataset.h === cropH);
+            });
+
+            const scale = previewScaleFor(cropW, cropH);
+            const notes = [`导出尺寸 ${cropW}×${cropH}px`];
+            if (scale < 0.999) {
+                notes.push(`预览按 ${Math.round(scale * 100)}% 显示以省内存，导出仍是全尺寸`);
+            } else if (scale > 1.001) {
+                notes.push(`预览放大到 ${scale.toFixed(1)} 倍便于操作`);
+            }
+            sizeNote.textContent = notes.join('｜');
+            sizeNote.classList.remove('warn');
+        }
+
+        function readSizeInputs() {
+            const w = Math.round(Number(sizeW.value));
+            const h = Math.round(Number(sizeH.value));
+            if (!Number.isFinite(w) || !Number.isFinite(h) ||
+                w < MIN_CROP || h < MIN_CROP || w > MAX_CROP || h > MAX_CROP) {
+                sizeNote.textContent = `尺寸需为 ${MIN_CROP}~${MAX_CROP} 之间的整数`;
+                sizeNote.classList.add('warn');
+                return null;
+            }
+            return { w, h };
+        }
+
+        function applySizeFromInputs() {
+            const v = readSizeInputs();
+            if (!v) return;
+            applyCropSize(v.w, v.h);
+        }
+
+        function usePreset(btn) {
+            applyCropSize(+btn.dataset.w, +btn.dataset.h);
+        }
+
+        // 改尺寸：已有图片保住构图，重绘画廊
+        function applyCropSize(w, h, opts) {
+            const silent = opts && opts.silent;
+            cropW = w;
+            cropH = h;
+            croppers.forEach(c => c.retarget(w, h));
+            applySizeCss();
+            syncSizeUI();
+            if (croppers.length > 0) renderGallery();
+            if (!silent) scheduleAutosave();
+        }
+
+        sizeW.addEventListener('keydown', e => { if (e.key === 'Enter') applySizeFromInputs(); });
+        sizeH.addEventListener('keydown', e => { if (e.key === 'Enter') applySizeFromInputs(); });
+
+        // ===== 编辑记录（IndexedDB） =====
+        // 图片数据太大（十几张就几十 MB），localStorage 的 5MB 根本装不下，所以用 IndexedDB。
+        // 拆成两个 store：images 按内容去重、只写一次；sessions 只存尺寸/构图/logo
+        // 这类几 KB 的元数据，自动保存时反复重写也不心疼。
+        const DB_NAME = 'imageCropper';
+        const DB_VERSION = 1;
+        const STORE_IMAGES = 'images';
+        const STORE_SESSIONS = 'sessions';
+        const CURRENT_KEY = 'current';
+        let dbPromise = null;
+        let dbBroken = false;
+
+        function openDB() {
+            if (dbBroken) return Promise.reject(new Error('IndexedDB 不可用'));
+            if (!dbPromise) {
+                dbPromise = new Promise((resolve, reject) => {
+                    if (!window.indexedDB) { reject(new Error('浏览器不支持 IndexedDB')); return; }
+                    const req = indexedDB.open(DB_NAME, DB_VERSION);
+                    req.onupgradeneeded = () => {
+                        const db = req.result;
+                        if (!db.objectStoreNames.contains(STORE_IMAGES)) db.createObjectStore(STORE_IMAGES);
+                        if (!db.objectStoreNames.contains(STORE_SESSIONS)) db.createObjectStore(STORE_SESSIONS);
+                    };
+                    req.onsuccess = () => resolve(req.result);
+                    req.onerror = () => reject(req.error);
+                    req.onblocked = () => reject(new Error('数据库被其他标签页占用'));
+                }).catch(err => { dbBroken = true; dbPromise = null; throw err; });
+            }
+            return dbPromise;
+        }
+
+        function withStore(store, mode, fn) {
+            return openDB().then(db => new Promise((resolve, reject) => {
+                const t = db.transaction(store, mode);
+                const req = fn(t.objectStore(store));
+                t.oncomplete = () => resolve(req ? req.result : undefined);
+                t.onerror = () => reject(t.error);
+                t.onabort = () => reject(t.error);
+            }));
+        }
+
+        const dbPut = (store, key, val) => withStore(store, 'readwrite', s => s.put(val, key));
+        const dbGet = (store, key) => withStore(store, 'readonly', s => s.get(key));
+        const dbDel = (store, key) => withStore(store, 'readwrite', s => s.delete(key));
+        const dbAll = (store) => withStore(store, 'readonly', s => s.getAll());
+        const dbKeys = (store) => withStore(store, 'readonly', s => s.getAllKeys());
+
+        // 按内容算键，同一张图重复上传只存一份。
+        // 整串 dataURL 逐字符哈希在几十 MB 上太慢，改成跨步采样，
+        // 再混入长度和两个不同种子，实拍照片撞键的概率可以忽略。
+        function hashDataUrl(s) {
+            const stride = Math.max(1, Math.ceil(s.length / 262144));
+            let h1 = 0x811c9dc5, h2 = 0x01000193;
+            for (let i = 0; i < s.length; i += stride) {
+                const c = s.charCodeAt(i);
+                h1 = Math.imul(h1 ^ c, 16777619) >>> 0;
+                h2 = Math.imul(h2 + c, 2246822519) >>> 0;
+            }
+            const hex = n => (n >>> 0).toString(16).padStart(8, '0');
+            return `${s.length.toString(36)}-${hex(h1)}${hex(h2)}`;
+        }
+
+        // 已经存过就不重复写，省掉一次几 MB 的事务
+        async function storeImage(dataUrl, meta) {
+            const key = hashDataUrl(dataUrl);
+            try {
+                const existing = await dbGet(STORE_IMAGES, key);
+                if (!existing) {
+                    await dbPut(STORE_IMAGES, key, {
+                        src: dataUrl,
+                        mimeType: meta.mimeType,
+                        width: meta.width,
+                        height: meta.height
+                    });
+                }
+            } catch (err) {
+                console.warn('图片写入失败，本次不记录', err);
+                return '';
+            }
+            return key;
+        }
+
+        // 一次编辑的完整状态：裁剪尺寸 + 每张图的构图和 logo 用法
+        function serializeSession(label, autosave) {
+            return {
+                label,
+                autosave: !!autosave,
+                time: Date.now(),
+                cropW,
+                cropH,
+                items: croppers.map(c => ({
+                    dataKey: c.dataKey,
+                    name: c.name,
+                    mimeType: c.mimeType,
+                    srcWidth: c.srcWidth,
+                    srcHeight: c.srcHeight,
+                    scale: c.scale,
+                    offsetX: c.offsetX,
+                    offsetY: c.offsetY,
+                    logoName: c.logo ? c.logo.name : '',
+                    logoScale: c.logoScale,
+                    logoX: c.logoX,
+                    logoY: c.logoY,
+                    done: c.done
+                }))
+            };
+        }
+
+        let autosaveTimer = null;
+        let restoring = false;
+        let pendingPromote = null;   // claimCurrent 的转存进度，见下方 saveCurrent
+
+        // 拖动、滚轮缩放会连着触发几十次重绘，防抖成一次写入
+        function scheduleAutosave() {
+            if (restoring) return;
+            clearTimeout(autosaveTimer);
+            autosaveTimer = setTimeout(saveCurrent, 800);
+        }
+
+        async function saveCurrent() {
+            if (restoring) return;
+            // 画面还空着、上次那份又没人接手，这时候什么都别写：
+            // 否则下面的删除分支会把还没还原的记录直接抹掉
+            if (staleCurrent && croppers.length === 0) return;
+            // 等上一次转存收尾，避免它的删除动作落在这次写入之后
+            if (pendingPromote) {
+                const p = pendingPromote;
+                await p.catch(() => {});
+                if (pendingPromote === p) pendingPromote = null;
+            }
+            if (restoring) return;
+            try {
+                if (croppers.length === 0) {
+                    await dbDel(STORE_SESSIONS, CURRENT_KEY);
+                } else {
+                    await dbPut(STORE_SESSIONS, CURRENT_KEY, serializeSession('当前编辑', true));
+                }
+                renderHistory();
+            } catch (err) {
+                console.warn('自动保存失败', err);
+            }
+        }
+
+        function clampSize(v, fallback) {
+            const n = Math.round(Number(v));
+            return Number.isFinite(n) && n >= MIN_CROP && n <= MAX_CROP ? n : fallback;
+        }
+
+        // 手动存一条记录，和自动保存的「当前编辑」并存，不会被覆盖
+        async function saveSnapshot() {
+            if (croppers.length === 0) { alert('还没有图片可以记录'); return; }
+            const def = `${cropW}×${cropH} · ${croppers.length}张`;
+            const label = prompt('给这条编辑记录起个名字', def);
+            if (label === null) return;
+            try {
+                await dbPut(STORE_SESSIONS, 'snap-' + Date.now(),
+                    serializeSession(label.trim() || def, false));
+                await renderHistory();
+                openHistory();
+            } catch (err) {
+                alert('保存编辑记录失败：' + (err && err.message ? err.message : err));
+            }
+        }
+
+        // 还原一条记录：尺寸、每张图的构图、logo 用法全部装回去
+        async function restoreSession(key) {
+            let session;
+            try {
+                session = await dbGet(STORE_SESSIONS, key);
+            } catch (err) {
+                alert('读取编辑记录失败：' + (err && err.message ? err.message : err));
+                return;
+            }
+            if (!session || !session.items) { alert('这条记录已经不在了'); return; }
+
+            if (croppers.length > 0 && !confirm('还原会替换当前画面上的图片，继续？')) return;
+
+            // session 已经读进内存了，这里再让位是安全的：
+            // 还原的就是那条陈旧记录 → 直接接手，不用转存；
+            // 还原的是别的记录 → 先把陈旧那条转存成命名记录，别被接下来的自动保存覆盖
+            if (key === CURRENT_KEY) staleCurrent = false;
+            else await claimCurrent();
+
+            restoring = true;
+            clearTimeout(autosaveTimer);
+            try {
+                // 先把尺寸切过去，这样新建的 cropper 直接按目标尺寸初始化
+                cropW = clampSize(session.cropW, DEFAULT_CROP_W);
+                cropH = clampSize(session.cropH, DEFAULT_CROP_H);
+
+                const rebuilt = [];
+                const missingImg = [];
+                const missingLogo = new Set();
+
+                for (const it of session.items) {
+                    let rec = null;
+                    try {
+                        rec = it.dataKey ? await dbGet(STORE_IMAGES, it.dataKey) : null;
+                    } catch (err) {
+                        console.warn('读取图片失败', it.name, err);
+                    }
+                    if (!rec || !rec.src) { missingImg.push(it.name); continue; }
+
+                    const c = new ImageCropper(
+                        rec.src, it.name,
+                        it.srcWidth || rec.width, it.srcHeight || rec.height,
+                        it.mimeType || rec.mimeType, it.dataKey
+                    );
+
+                    let logo = null;
+                    if (it.logoName) {
+                        logo = logoImages.find(l => l.name === it.logoName) || null;
+                        if (!logo) missingLogo.add(it.logoName);
+                    }
+                    c.applyState({
+                        scale: it.scale,
+                        offsetX: it.offsetX,
+                        offsetY: it.offsetY,
+                        logo,
+                        logoScale: it.logoScale,
+                        logoX: it.logoX,
+                        logoY: it.logoY,
+                        done: it.done
+                    });
+                    rebuilt.push(c);
+                }
+
+                croppers = rebuilt;
+                applySizeCss();
+                syncSizeUI();
+                renderGallery();
+
+                const notes = [];
+                if (missingImg.length) notes.push(`${missingImg.length} 张图片数据已丢失，未能还原`);
+                if (missingLogo.size) notes.push(`logo 素材已不存在：${[...missingLogo].join('、')}`);
+                if (notes.length) alert('已还原，但有遗漏：\n' + notes.join('\n'));
+            } finally {
+                restoring = false;
+            }
+            saveCurrent();
+        }
+
+        async function dropSession(key, label) {
+            const what = key === CURRENT_KEY
+                ? (staleCurrent ? '上次未编完的那条记录' : '「当前编辑」的自动记录')
+                : `记录「${label}」`;
+            if (!confirm(`删除${what}？`)) return;
+            try {
+                await dbDel(STORE_SESSIONS, key);
+                // 记录已经删了，没什么可转存的了
+                if (key === CURRENT_KEY) staleCurrent = false;
+                await gcImages();
+                await renderHistory();
+            } catch (err) {
+                alert('删除失败：' + (err && err.message ? err.message : err));
+            }
+        }
+
+        // 没有任何记录再引用的图片数据就清掉，否则 IndexedDB 只会越来越大
+        async function gcImages() {
+            try {
+                const sessions = await dbAll(STORE_SESSIONS);
+                const alive = new Set();
+                sessions.forEach(s => (s.items || []).forEach(it => {
+                    if (it.dataKey) alive.add(it.dataKey);
+                }));
+                croppers.forEach(c => { if (c.dataKey) alive.add(c.dataKey); });
+
+                const keys = await dbKeys(STORE_IMAGES);
+                for (const k of keys) {
+                    if (!alive.has(k)) await dbDel(STORE_IMAGES, k);
+                }
+            } catch (err) {
+                console.warn('清理无用图片数据失败', err);
+            }
+        }
+
+        // logo 使用统计：哪张 logo 用了几次，一眼能看出上次的搭配
+        function logoUsage(items) {
+            const counts = new Map();
+            let none = 0;
+            items.forEach(it => {
+                if (!it.logoName) { none++; return; }
+                counts.set(it.logoName, (counts.get(it.logoName) || 0) + 1);
+            });
+            const parts = [...counts.entries()]
+                .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+                .map(([n, c]) => `${n}×${c}`);
+            if (none) parts.push(`无 logo×${none}`);
+            return parts.length ? parts.join('，') : '无';
+        }
+
+        function fmtTime(ts) {
+            const d = new Date(ts);
+            const p = n => String(n).padStart(2, '0');
+            return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ` +
+                   `${p(d.getHours())}:${p(d.getMinutes())}`;
+        }
+
+        // 键和值要在同一个事务里取，分两次 getAllKeys/getAll 可能读到不同状态
+        function dbEntries(store) {
+            return openDB().then(db => new Promise((resolve, reject) => {
+                const t = db.transaction(store, 'readonly');
+                const out = [];
+                t.objectStore(store).openCursor().onsuccess = (e) => {
+                    const cur = e.target.result;
+                    if (cur) { out.push({ key: cur.key, value: cur.value }); cur.continue(); }
+                };
+                t.oncomplete = () => resolve(out);
+                t.onerror = () => reject(t.error);
+                t.onabort = () => reject(t.error);
+            }));
+        }
+
+        const historyBox = document.getElementById('history');
+        const historyBody = document.getElementById('historyBody');
+        const historyTitle = document.getElementById('historyTitle');
+        const historyTip = document.getElementById('historyTip');
+        const historyCaret = document.getElementById('historyCaret');
+        let historyOpen = false;
+
+        function toggleHistory() {
+            historyOpen = !historyOpen;
+            historyBody.style.display = historyOpen ? 'block' : 'none';
+            historyCaret.textContent = historyOpen ? '▼' : '▶';
+        }
+
+        function openHistory() {
+            if (!historyOpen) toggleHistory();
+        }
+
+        async function renderHistory() {
+            let entries;
+            try {
+                entries = await dbEntries(STORE_SESSIONS);
+            } catch (err) {
+                historyBox.style.display = 'block';
+                historyBody.innerHTML =
+                    '<div class="history-empty">这个浏览器不支持或禁用了本地数据库（无痕模式常见），' +
+                    '编辑记录用不了，其他功能不受影响。</div>';
+                return;
+            }
+
+            // 「当前编辑」排最前，其余按时间倒序
+            entries.sort((a, b) => {
+                if (a.key === CURRENT_KEY) return -1;
+                if (b.key === CURRENT_KEY) return 1;
+                return (b.value.time || 0) - (a.value.time || 0);
+            });
+
+            historyBox.style.display = 'block';
+            const snaps = entries.filter(e => e.key !== CURRENT_KEY).length;
+            historyTitle.textContent = snaps
+                ? `编辑记录（${snaps} 条已保存）`
+                : '编辑记录';
+
+            // 上次没编完的那条，在标题上点一句，省得还要展开才发现
+            const stale = staleCurrent && entries.find(e => e.key === CURRENT_KEY);
+            historyTip.textContent = stale
+                ? `· 上次未编完的 ${stale.value.items.length} 张可还原`
+                : '';
+
+            if (entries.length === 0) {
+                historyBody.innerHTML =
+                    '<div class="history-empty">还没有记录。编辑过程会自动记录，' +
+                    '也可以点「💾 存为编辑记录」手动存一条。</div>';
+                return;
+            }
+
+            historyBody.innerHTML = '';
+            entries.forEach(({ key, value }) => historyBody.appendChild(
+                historyRow(key, value, staleCurrent && key === CURRENT_KEY)));
+        }
+
+        function historyRow(key, session, stale) {
+            const items = session.items || [];
+            const row = document.createElement('div');
+            // 陈旧那条标「上次未完成」，就不再标「自动保存」了，两个角标只留一个
+            row.className = 'history-item' +
+                (stale ? ' stale' : (session.autosave ? ' autosave' : ''));
+
+            const meta = document.createElement('div');
+            meta.className = 'meta';
+
+            const label = document.createElement('div');
+            label.className = 'label';
+            label.textContent = stale ? '上次编辑' : (session.label || '未命名');
+            meta.appendChild(label);
+
+            const line = document.createElement('div');
+            line.textContent = `裁剪 ${session.cropW}×${session.cropH}px · ${items.length} 张 · ` +
+                `已确定 ${items.filter(i => i.done).length} 张 · ${fmtTime(session.time)}`;
+            meta.appendChild(line);
+
+            const logos = document.createElement('div');
+            logos.className = 'sub';
+            logos.textContent = 'Logo：' + logoUsage(items);
+            meta.appendChild(logos);
+
+            // 列出前几个文件名，方便认出是哪一批
+            const names = document.createElement('div');
+            names.className = 'sub';
+            names.textContent = items.slice(0, 4).map(i => i.name).join('、') +
+                (items.length > 4 ? ` …另 ${items.length - 4} 张` : '');
+            meta.appendChild(names);
+
+            row.appendChild(meta);
+
+            const restore = document.createElement('button');
+            restore.className = 'btn-restore';
+            restore.textContent = stale ? '继续编辑' : '还原';
+            restore.onclick = () => restoreSession(key);
+            row.appendChild(restore);
+
+            const drop = document.createElement('button');
+            drop.className = 'btn-drop';
+            drop.textContent = '删除';
+            drop.onclick = () => dropSession(key, session.label || '未命名');
+            row.appendChild(drop);
+
+            return row;
+        }
+
+        // 开页面时如果上次那份还在，先标记成「陈旧」：
+        // 它照常列在记录里可以还原，但一旦你开始新的一批（上传新图或还原别的记录），
+        // 就先把它转存成一条命名记录再让位，不能被新的自动保存直接覆盖掉
+        let staleCurrent = false;
+
+        async function checkStaleCurrent() {
+            try {
+                const s = await dbGet(STORE_SESSIONS, CURRENT_KEY);
+                staleCurrent = !!(s && s.items && s.items.length);
+            } catch (err) {
+                staleCurrent = false;
+            }
+        }
+
+        // 新一批开始前调用：上次那份该转存的转存，之后 CURRENT_KEY 就归新的用
+        function claimCurrent() {
+            if (!staleCurrent) return Promise.resolve();
+            staleCurrent = false;
+            // 转存过程里若正好触发自动保存，会把刚写的当前记录又删掉，
+            // 所以把这个 promise 挂出去，saveCurrent 先等它做完
+            pendingPromote = (async () => {
+                try {
+                    const s = await dbGet(STORE_SESSIONS, CURRENT_KEY);
+                    if (s && s.items && s.items.length) {
+                        s.autosave = false;
+                        s.label = `上次未完成（${s.cropW}×${s.cropH}·${s.items.length}张）`;
+                        await dbPut(STORE_SESSIONS, 'snap-' + (s.time || Date.now()), s);
+                        await dbDel(STORE_SESSIONS, CURRENT_KEY);
+                        await renderHistory();
+                    }
+                } catch (err) {
+                    console.warn('转存上次编辑失败', err);
+                }
+            })();
+            return pendingPromote;
+        }
+
+        uploadArea.addEventListener('click', () => fileInput.click());
+
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            handleFiles(e.dataTransfer.files);
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            handleFiles(e.target.files);
+        });
+
+        // file.type 在个别 Windows 上是空的（注册表缺 MIME 关联），
+        // 这时按扩展名兜底，否则图片会被当成非图片直接跳过
+        function resolveMime(file) {
+            const t = (file.type || '').toLowerCase();
+            if (t.startsWith('image/')) return t;
+            const m = file.name.match(/\.([^.]+)$/);
+            return m ? extToMime(m[1]) : '';
+        }
+
+        function handleFiles(files) {
+            // 传新图说明要开新的一批：上次那份先转存成一条命名记录，
+            // 否则接下来的自动保存会把它覆盖没了
+            claimCurrent();
+
+            Array.from(files).forEach(file => {
+                const mime = resolveMime(file);
+                if (!mime) return;
+
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const dataUrl = e.target.result;
+                    const img = new Image();
+                    img.onload = () => {
+                        const cropper = new ImageCropper(dataUrl, file.name, img.width, img.height, mime);
+                        croppers.push(cropper);
+                        renderGallery();
+                        // 图片数据单独入库，编辑记录只引用它的键。
+                        // 入库要写几 MB，先让界面出来，拿到键之后再补记一次
+                        storeImage(dataUrl, { mimeType: mime, width: img.width, height: img.height })
+                            .then(key => { cropper.dataKey = key; scheduleAutosave(); });
+                    };
+                    img.src = dataUrl;
+                };
+                reader.readAsDataURL(file);
+            });
+        }
+
+        function renderGallery() {
+            if (croppers.length === 0) {
+                gallery.innerHTML = '<div class="empty-state">暂无图片，请上传</div>';
+                controls.style.display = 'none';
+                progress.style.display = 'none';
+                return;
+            }
+
+            controls.style.display = 'flex';
+            progress.style.display = 'block';
+            const doneCount = croppers.filter(c => c.done).length;
+            progress.textContent = `共 ${croppers.length} 张，已确定 ${doneCount} 张`;
+
+            gallery.innerHTML = '';
+
+            croppers.forEach(cropper => {
+                const item = document.createElement('div');
+                item.className = 'image-item' + (cropper.done ? ' done' : '');
+                item.id = `item-${cropper.id}`;
+
+                const nameDiv = document.createElement('div');
+                nameDiv.className = 'image-name';
+                nameDiv.textContent = cropper.name;
+                // 明确标出导出后的文件名，避免和原文件对不上时说不清
+                const out = plannedName(cropper);
+                const outDiv = document.createElement('div');
+                outDiv.className = 'image-out' + (out === cropper.name ? ' same' : ' changed');
+                outDiv.textContent = out === cropper.name
+                    ? '导出：同名同格式'
+                    : '导出：' + out;
+                nameDiv.appendChild(outDiv);
+
+                // 源图小于裁剪框时必须放大才能填满，会发虚，明确提示出来
+                if (cropper.minScale > 1) {
+                    const warn = document.createElement('div');
+                    warn.className = 'image-warn';
+                    warn.textContent = `⚠ 源图仅 ${cropper.srcWidth}×${cropper.srcHeight}，` +
+                        `需放大 ${cropper.minScale.toFixed(1)} 倍才能填满 ` +
+                        `${cropper.cropWidth}×${cropper.cropHeight}，会发虚`;
+                    nameDiv.appendChild(warn);
+                }
+
+                const container = document.createElement('div');
+                container.className = 'crop-container';
+                container.appendChild(cropper.render());
+
+                item.appendChild(nameDiv);
+                item.appendChild(container);
+
+                if (cropper.done) {
+                    const badge = document.createElement('div');
+                    badge.className = 'done-badge';
+                    badge.textContent = cropper.logo
+                        ? `✓ 已确定 · ${cropper.logo.name}`
+                        : '✓ 已确定 · 无 logo';
+                    item.appendChild(badge);
+
+                    const editBtn = document.createElement('button');
+                    editBtn.className = 'btn-secondary';
+                    editBtn.style.width = '100%';
+                    editBtn.style.marginTop = '10px';
+                    editBtn.textContent = '重新编辑';
+                    editBtn.onclick = () => {
+                        cropper.done = false;
+                        renderGallery();
+                    };
+                    item.appendChild(editBtn);
+                } else {
+                    const zoomControls = document.createElement('div');
+                    zoomControls.className = 'zoom-controls';
+                    zoomControls.appendChild(makeBtn('🔍− 图', () => cropper.zoom(1 / 1.1)));
+                    zoomControls.appendChild(makeBtn('🔍+ 图', () => cropper.zoom(1.1)));
+                    zoomControls.appendChild(makeBtn('↺ 重置', () => cropper.reset()));
+                    item.appendChild(zoomControls);
+
+                    const logoLabel = document.createElement('div');
+                    logoLabel.className = 'section-label';
+                    logoLabel.textContent = 'Logo（点击添加，再点一次取消）｜角标 1/2/3 是同名的不同版本';
+                    item.appendChild(logoLabel);
+
+                    const picker = document.createElement('div');
+                    picker.className = 'logo-picker';
+                    groupLogos(logoImages).forEach(group => {
+                        const col = document.createElement('div');
+                        col.className = 'logo-group';
+                        group.forEach(logo => {
+                            const thumb = document.createElement('div');
+                            thumb.className = 'logo-thumb ' +
+                                (logo.light ? 'on-dark' : 'on-light') +
+                                (cropper.logo && cropper.logo.name === logo.name ? ' active' : '');
+                            thumb.title = logo.name;
+                            const thumbImg = document.createElement('img');
+                            thumbImg.src = logo.src;
+                            thumbImg.alt = logo.name;
+                            thumb.appendChild(thumbImg);
+                            if (logo.variant) {
+                                const badge = document.createElement('span');
+                                badge.className = 'logo-badge';
+                                badge.textContent = logo.variant;
+                                thumb.appendChild(badge);
+                            }
+                            thumb.onclick = () => {
+                                cropper.setLogo(logo);
+                                renderGallery();
+                            };
+                            col.appendChild(thumb);
+                        });
+                        picker.appendChild(col);
+                    });
+                    item.appendChild(picker);
+
+                    if (cropper.logo) {
+                        const logoControls = document.createElement('div');
+                        logoControls.className = 'logo-controls';
+                        logoControls.appendChild(makeBtn('🔍− Logo', () => cropper.zoomLogo(1 / 1.1)));
+                        logoControls.appendChild(makeBtn('🔍+ Logo', () => cropper.zoomLogo(1.1)));
+                        logoControls.appendChild(makeBtn('✕ 移除', () => {
+                            cropper.removeLogo();
+                            renderGallery();
+                        }));
+                        item.appendChild(logoControls);
+
+                        const hint = document.createElement('div');
+                        hint.className = 'hint';
+                        hint.textContent = '拖 logo 移动位置，拖空白处移动背景图，滚轮缩放';
+                        item.appendChild(hint);
+                    }
+
+                    const doneBtn = document.createElement('button');
+                    doneBtn.className = 'btn-done';
+                    doneBtn.textContent = '✓ 确定';
+                    doneBtn.onclick = () => confirmImage(cropper.id);
+                    item.appendChild(doneBtn);
+                }
+
+                const removeBtn = document.createElement('button');
+                removeBtn.className = 'btn-remove';
+                removeBtn.textContent = '删除';
+                removeBtn.onclick = () => removeImage(cropper.id);
+                item.appendChild(removeBtn);
+
+                gallery.appendChild(item);
+            });
+        }
+
+        // 按 base 分组并保持原顺序；没有 base 字段的各自独立成组
+        function groupLogos(list) {
+            const groups = [];
+            const byBase = new Map();
+            list.forEach(logo => {
+                const key = logo.base;
+                if (!key) { groups.push([logo]); return; }
+                if (!byBase.has(key)) {
+                    const g = [];
+                    byBase.set(key, g);
+                    groups.push(g);
+                }
+                byBase.get(key).push(logo);
+            });
+            return groups;
+        }
+
+        function makeBtn(label, onClick) {
+            const b = document.createElement('button');
+            b.textContent = label;
+            b.onclick = onClick;
+            return b;
+        }
+
+        // 确定当前图片，并滚动到下一张待编辑的
+        function confirmImage(id) {
+            const idx = croppers.findIndex(c => c.id === id);
+            if (idx === -1) return;
+            croppers[idx].done = true;
+            renderGallery();
+
+            const next = croppers.slice(idx + 1).find(c => !c.done)
+                      || croppers.find(c => !c.done);
+            if (next) {
+                const el = document.getElementById(`item-${next.id}`);
+                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }
+
+        function removeImage(id) {
+            croppers = croppers.filter(c => c.id !== id);
+            renderGallery();
+            // 删完可能一张不剩，renderGallery 不会重绘画布，这里显式存一次
+            scheduleAutosave();
+        }
+
+        function clearAll() {
+            if (!confirm('确定清空所有图片吗？')) return;
+            croppers = [];
+            renderGallery();
+            clearTimeout(autosaveTimer);
+            // 清空后「当前编辑」自然为空；已手动保存的记录不受影响
+            saveCurrent().then(gcImages);
+        }
+
+        // canvas 只能编码这三种；gif/bmp/tiff/heic 等会被静默降级成 png
+        const ENCODABLE = ['image/png', 'image/jpeg', 'image/webp'];
+        const EXT_BY_MIME = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' };
+        const LOSSY_QUALITY = 0.95;
+
+        function extToMime(ext) {
+            switch (ext.toLowerCase()) {
+                case 'jpg': case 'jpeg': case 'jpe': return 'image/jpeg';
+                case 'png': return 'image/png';
+                case 'webp': return 'image/webp';
+                default: return '';
+            }
+        }
+
+        // 把扩展名换成 mime 对应的；已经对得上就原样不动（保留 .JPG/.jpeg 的写法）
+        function renameToMime(name, mime) {
+            const ext = EXT_BY_MIME[mime] || 'png';
+            const m = name.match(/^(.*)\.([^.]+)$/);
+            if (!m) return name + '.' + ext;
+            const stem = m[1], oldExt = m[2];
+            if (extToMime(oldExt) === mime) return name;
+            const isUpper = oldExt === oldExt.toUpperCase() && /[A-Z]/.test(oldExt);
+            return stem + '.' + (isUpper ? ext.toUpperCase() : ext);
+        }
+
+        // 预告导出文件名（和 encodeCropper 的选型保持一致），只用于界面展示
+        function plannedName(cropper) {
+            const wanted = (cropper.mimeType || '').toLowerCase();
+            const target = ENCODABLE.includes(wanted) ? wanted : 'image/png';
+            return renameToMime(cropper.name, target);
+        }
+
+        function canvasToBlob(canvas, type, quality) {
+            return new Promise(resolve => {
+                if (canvas.toBlob) {
+                    canvas.toBlob(b => resolve(b), type, quality);
+                } else {
+                    fetch(canvas.toDataURL(type, quality))
+                        .then(r => r.blob()).then(resolve, () => resolve(null));
+                }
+            });
+        }
+
+        // 按上传时的格式导出，方便直接替换原文件
+        async function encodeCropper(cropper) {
+            const canvas = cropper.export();
+            const wanted = (cropper.mimeType || '').toLowerCase();
+            const target = ENCODABLE.includes(wanted) ? wanted : 'image/png';
+            const quality = target === 'image/png' ? undefined : LOSSY_QUALITY;
+
+            let blob = await canvasToBlob(canvas, target, quality);
+            if (!blob) blob = await canvasToBlob(canvas, 'image/png');
+
+            // 用浏览器实际产出的格式定扩展名，避免「叫 .gif 其实是 png」
+            const actual = ENCODABLE.includes(blob.type) ? blob.type : 'image/png';
+            return { blob, fileName: renameToMime(cropper.name, actual), mime: actual };
+        }
+
+        // 同名文件加序号，避免 zip 里互相覆盖导致少文件
+        function uniqueName(name, used) {
+            if (!used.has(name)) { used.add(name); return name; }
+            const m = name.match(/^(.*)\.([^.]+)$/);
+            const stem = m ? m[1] : name;
+            const suffix = m ? '.' + m[2] : '';
+            let i = 2;
+            while (used.has(stem + '_' + i + suffix)) i++;
+            const out = stem + '_' + i + suffix;
+            used.add(out);
+            return out;
+        }
+
+        async function downloadAll() {
+            if (croppers.length === 0) return;
+
+            const zip = new JSZip();
+            const used = new Set();
+            const counts = {};
+            const downgraded = [];
+
+            for (let i = 0; i < croppers.length; i++) {
+                const cropper = croppers[i];
+                const { blob, fileName, mime } = await encodeCropper(cropper);
+
+                counts[mime] = (counts[mime] || 0) + 1;
+                const wanted = (cropper.mimeType || '').toLowerCase();
+                if (wanted && wanted !== mime) downgraded.push(cropper.name);
+
+                zip.file(uniqueName(fileName, used), blob);
+            }
+
+            // 生成压缩包并下载
+            const content = await zip.generateAsync({
+                type: 'blob',
+                compression: 'DEFLATE',
+                compressionOptions: { level: 6 }
+            });
+
+            const url = URL.createObjectURL(content);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'cropped_images.zip';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+
+            setTimeout(() => URL.revokeObjectURL(url), 100);
+
+            const summary = Object.keys(counts)
+                .map(m => `${counts[m]} 张 ${(EXT_BY_MIME[m] || m).toUpperCase()}`)
+                .join('，');
+            let msg = `已打包 ${croppers.length} 张图片为 cropped_images.zip\n格式：${summary}`;
+            if (downgraded.length) {
+                msg += `\n\n以下 ${downgraded.length} 张的原格式浏览器无法导出，已转为 PNG：\n` +
+                       downgraded.slice(0, 5).join('\n') +
+                       (downgraded.length > 5 ? `\n…另 ${downgraded.length - 5} 张` : '');
+            }
+            alert(msg);
+        }
+
+        // 尺寸相关的界面不依赖 logo，先立刻就位
+        applySizeCss();
+        syncSizeUI();
+
+        preloadLogos().then(list => {
+            if (list.length === 0) {
+                console.warn('没有可用的 logo');
+            }
+            if (croppers.length > 0) renderGallery();
+            // 还原时要按名字找回 logo 对象，所以等素材加载完再处理记录。
+            // 先判断上次那份是否还挂着，renderHistory 要靠这个标记决定怎么标
+            return checkStaleCurrent().then(renderHistory);
+        });
+    </script>
+</body>
+</html>
