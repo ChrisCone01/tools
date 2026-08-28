@@ -51,7 +51,8 @@
             background: #e8f5e9;
         }
 
-        #fileInput {
+        #fileInput,
+        #logoFileInput {
             display: none;
         }
 
@@ -254,6 +255,68 @@
         .logo-thumb.active {
             border-color: #4CAF50;
             box-shadow: 0 0 0 2px rgba(76,175,80,0.25);
+        }
+
+        /* 自己上传的 logo 用虚线框和内置素材区分开，选中时才变实线 */
+        .logo-thumb.custom {
+            border-style: dashed;
+        }
+
+        .logo-thumb.custom.active {
+            border-style: solid;
+        }
+
+        /* 删除按钮放左上角，右上角留给版本角标 */
+        .logo-del {
+            position: absolute;
+            top: -1px;
+            left: -1px;
+            display: none;
+            padding: 2px 4px;
+            font-size: 9px;
+            line-height: 1;
+            border: none;
+            border-radius: 3px 0 3px 0;
+            background: rgba(192,57,43,0.85);
+            color: #fff;
+            cursor: pointer;
+        }
+
+        .logo-thumb.custom:hover .logo-del {
+            display: block;
+        }
+
+        /* 素材区是管理位，删除按钮常显，省得还要先猜哪个能删 */
+        .logo-picker.manage .logo-thumb.custom .logo-del {
+            display: block;
+        }
+
+        /* 上传入口，尺寸跟缩略图一致才排得齐 */
+        .logo-add {
+            width: 72px;
+            height: 52px;
+            padding: 0;
+            border: 2px dashed #ccc;
+            border-radius: 4px;
+            background: #fff;
+            color: #888;
+            font-size: 11px;
+            line-height: 1.3;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 2px;
+        }
+
+        .logo-add .plus {
+            font-size: 16px;
+            line-height: 1;
+        }
+
+        .logo-add:hover {
+            border-color: #4CAF50;
+            color: #4CAF50;
         }
 
         .logo-controls {
@@ -513,6 +576,14 @@
             <div class="history-body" id="historyBody" style="display: none;"></div>
         </div>
 
+        <div class="history" id="logoPanel">
+            <div class="history-head" onclick="toggleLogoPanel()">
+                <span class="title" id="logoPanelTitle">Logo 素材</span>
+                <span class="caret" id="logoPanelCaret">▼</span>
+            </div>
+            <div class="history-body" id="logoPanelBody"></div>
+        </div>
+
         <div class="upload-area" id="uploadArea">
             <p style="font-size: 18px; margin-bottom: 10px;">📁 点击或拖拽上传图片</p>
             <p style="color: #999; font-size: 14px;">支持批量上传</p>
@@ -530,35 +601,44 @@
         <div class="gallery" id="gallery">
             <div class="empty-state">暂无图片，请上传</div>
         </div>
+
+        <input type="file" id="logoFileInput" accept="image/*" multiple>
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="logos.js"></script>
     <script>
-        // LOGO_DATA 来自 logos.js（由 gen_logos.py 从素材目录生成的 base64 内嵌数据）
+        // LOGO_DATA 来自 logos.js（由 gen_logos.py 从素材目录生成的 base64 内嵌数据）。
+        // logoImages 是「内置素材 + 自己上传的」合并结果，界面和记录还原都只看它，
+        // 上传的排在内置后面，所以内置素材的顺序不受影响。
         let logoImages = [];
+        let builtinLogos = [];
+        let customLogos = [];
 
-        function preloadLogos() {
-            if (typeof LOGO_DATA === 'undefined') {
-                console.warn('logos.js 未加载');
-                return Promise.resolve([]);
-            }
-            return Promise.all(LOGO_DATA.map(item => new Promise(resolve => {
+        function rebuildLogoList() {
+            logoImages = builtinLogos.concat(customLogos);
+            return logoImages;
+        }
+
+        // 把一条 logo 记录解码成带 img 的对象，解不出来的返回 null
+        function loadLogoItem(item) {
+            return new Promise(resolve => {
                 const img = new Image();
-                img.onload = () => resolve({
-                    name: item.name,
-                    base: item.base,
-                    variant: item.variant,
-                    light: item.light,
-                    src: item.src,
-                    img
-                });
+                img.onload = () => resolve({ ...item, img });
                 img.onerror = () => resolve(null);
                 img.src = item.src;
-            }))).then(list => {
-                logoImages = list.filter(Boolean);
-                return logoImages;
             });
+        }
+
+        function preloadLogos() {
+            const data = typeof LOGO_DATA === 'undefined' ? null : LOGO_DATA;
+            if (!data) console.warn('logos.js 未加载');
+            return Promise.all((data || []).map(loadLogoItem))
+                .then(list => {
+                    builtinLogos = list.filter(Boolean);
+                    return loadCustomLogos();
+                })
+                .then(() => rebuildLogoList());
         }
 
         let nextId = 1;
@@ -1000,9 +1080,11 @@
         // 拆成两个 store：images 按内容去重、只写一次；sessions 只存尺寸/构图/logo
         // 这类几 KB 的元数据，自动保存时反复重写也不心疼。
         const DB_NAME = 'imageCropper';
-        const DB_VERSION = 1;
+        // v2 起多了 logos store，用来存自己上传的 logo 素材
+        const DB_VERSION = 2;
         const STORE_IMAGES = 'images';
         const STORE_SESSIONS = 'sessions';
+        const STORE_LOGOS = 'logos';
         const CURRENT_KEY = 'current';
         let dbPromise = null;
         let dbBroken = false;
@@ -1017,6 +1099,7 @@
                         const db = req.result;
                         if (!db.objectStoreNames.contains(STORE_IMAGES)) db.createObjectStore(STORE_IMAGES);
                         if (!db.objectStoreNames.contains(STORE_SESSIONS)) db.createObjectStore(STORE_SESSIONS);
+                        if (!db.objectStoreNames.contains(STORE_LOGOS)) db.createObjectStore(STORE_LOGOS);
                     };
                     req.onsuccess = () => resolve(req.result);
                     req.onerror = () => reject(req.error);
@@ -1041,6 +1124,298 @@
         const dbDel = (store, key) => withStore(store, 'readwrite', s => s.delete(key));
         const dbAll = (store) => withStore(store, 'readonly', s => s.getAll());
         const dbKeys = (store) => withStore(store, 'readonly', s => s.getAllKeys());
+
+        // ===== 自己上传的 logo =====
+        // 存在 IndexedDB 的 logos store 里，和编辑记录一样关掉页面也不丢。
+        // 尺寸上限、亮度阈值都跟 gen_logos.py 保持一致，缩略图底色的判断才不会和内置素材两套标准。
+        const LOGO_MAX_DIM = 1200;       // 长边上限，logo 最大也就铺满框宽，再大纯浪费
+        const LOGO_LIGHT_THRESHOLD = 195; // 不透明像素平均亮度高于这个值算浅色版，配深底
+        const logoFileInput = document.getElementById('logoFileInput');
+
+        async function loadCustomLogos() {
+            let rows = [];
+            try {
+                rows = await dbAll(STORE_LOGOS);
+            } catch (err) {
+                // 无痕模式等场景读不到，只是没有上传过的 logo，其他功能照常
+                console.warn('读取自定义 logo 失败', err);
+                return customLogos;
+            }
+            rows.sort((a, b) => (a.time || 0) - (b.time || 0));
+            const list = await Promise.all(rows.map(loadLogoItem));
+            customLogos = list.filter(Boolean);
+            return customLogos;
+        }
+
+        // 不透明像素的平均亮度，缩小到 64px 以内采样就够，省得在大图上逐像素跑
+        function logoLightness(img) {
+            const s = Math.min(1, 64 / Math.max(img.width, img.height));
+            const w = Math.max(1, Math.round(img.width * s));
+            const h = Math.max(1, Math.round(img.height * s));
+            const c = document.createElement('canvas');
+            c.width = w;
+            c.height = h;
+            const ctx = c.getContext('2d');
+            ctx.drawImage(img, 0, 0, w, h);
+            let sum = 0, n = 0;
+            try {
+                const d = ctx.getImageData(0, 0, w, h).data;
+                for (let i = 0; i < d.length; i += 4) {
+                    if (d[i + 3] <= 128) continue;  // 半透明以下不算
+                    sum += 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+                    n++;
+                }
+            } catch (err) {
+                return 128;  // 取不到像素就当中间亮度
+            }
+            return n ? sum / n : 128;
+        }
+
+        // webp 带 alpha 且体积约为 png 的四成；浏览器不支持时 toDataURL 自己会退回 png
+        function encodeLogoCanvas(canvas) {
+            const webp = canvas.toDataURL('image/webp', 0.92);
+            return webp.startsWith('data:image/webp') ? webp : canvas.toDataURL('image/png');
+        }
+
+        // 超过尺寸上限就缩下来，否则一张 4000px 的 logo 白占几 MB；
+        // 没超限的保持原始数据不动，免得无谓重编码掉质量
+        function normalizeLogoSrc(img, dataUrl) {
+            const long = Math.max(img.width, img.height);
+            if (long <= LOGO_MAX_DIM) return dataUrl;
+            const s = LOGO_MAX_DIM / long;
+            const w = Math.max(1, Math.round(img.width * s));
+            const h = Math.max(1, Math.round(img.height * s));
+            const c = document.createElement('canvas');
+            c.width = w;
+            c.height = h;
+            const ctx = c.getContext('2d');
+            ctx.imageSmoothingQuality = 'high';
+            ctx.drawImage(img, 0, 0, w, h);
+            return encodeLogoCanvas(c);
+        }
+        // 上传的 logo 常带一圈空白（导出时画布比图形大一圈），不裁掉的话有两个实际后果：
+        // 默认宽度按 40% 框宽算出来的是「含空白」的宽度，图形本身显小；
+        // 往边角拖的时候也会先被那圈空白顶住，贴不到边。
+        const LOGO_ALPHA_CUT = 8;   // alpha 低于此值算空白
+        const LOGO_BG_TOL = 12;     // 与底色的各通道差都不超过此值算同色
+
+        // 判「这个像素算空白吗」。两种情况分开处理：
+        // 有透明像素的按 alpha 判；整张不透明的（jpg 之类）拿四角当底色判。
+        // 四角颜色不一致说明不是纯色底（照片、渐变），返回 null 表示这张别裁。
+        function logoBlankTest(d, w, h) {
+            for (let i = 3; i < d.length; i += 4) {
+                if (d[i] < 250) return (p) => d[p + 3] < LOGO_ALPHA_CUT;
+            }
+            const corner = (x, y) => (y * w + x) * 4;
+            const cs = [corner(0, 0), corner(w - 1, 0), corner(0, h - 1), corner(w - 1, h - 1)];
+            const r0 = d[cs[0]], g0 = d[cs[0] + 1], b0 = d[cs[0] + 2];
+            const near = (p) => Math.abs(d[p] - r0) <= LOGO_BG_TOL &&
+                                Math.abs(d[p + 1] - g0) <= LOGO_BG_TOL &&
+                                Math.abs(d[p + 2] - b0) <= LOGO_BG_TOL;
+            return cs.every(near) ? near : null;
+        }
+        // 裁掉四周的空白边。返回 status：ok 裁了，none 不用裁或不该裁，blank 整张都是空的
+        function trimLogoSrc(img) {
+            const w = img.width, h = img.height;
+            const c = document.createElement('canvas');
+            c.width = w;
+            c.height = h;
+            const ctx = c.getContext('2d');
+            ctx.drawImage(img, 0, 0);
+
+            let d;
+            try {
+                d = ctx.getImageData(0, 0, w, h).data;
+            } catch (err) {
+                return { status: 'none' };   // 取不到像素就别动
+            }
+
+            const isBlank = logoBlankTest(d, w, h);
+            if (!isBlank) return { status: 'none' };
+
+            const rowBlank = (y) => {
+                for (let x = 0; x < w; x++) if (!isBlank((y * w + x) * 4)) return false;
+                return true;
+            };
+            // 左右边只需在已确定的上下范围内扫，省掉一大片重复判断
+            const colBlank = (x, top, bottom) => {
+                for (let y = top; y <= bottom; y++) if (!isBlank((y * w + x) * 4)) return false;
+                return true;
+            };
+
+            let top = 0, bottom = h - 1;
+            while (top <= bottom && rowBlank(top)) top++;
+            if (top > bottom) return { status: 'blank' };
+            while (bottom > top && rowBlank(bottom)) bottom--;
+
+            let left = 0, right = w - 1;
+            while (left < right && colBlank(left, top, bottom)) left++;
+            while (right > left && colBlank(right, top, bottom)) right--;
+
+            const nw = right - left + 1, nh = bottom - top + 1;
+            if (nw === w && nh === h) return { status: 'none' };
+
+            const out = document.createElement('canvas');
+            out.width = nw;
+            out.height = nh;
+            out.getContext('2d').drawImage(c, left, top, nw, nh, 0, 0, nw, nh);
+            return { status: 'ok', src: encodeLogoCanvas(out), from: [w, h], to: [nw, nh] };
+        }
+
+        function decodeImage(src) {
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                img.onload = () => resolve(img);
+                img.onerror = () => reject(new Error('图片解码失败'));
+                img.src = src;
+            });
+        }
+
+        function fileToDataUrl(file) {
+            return new Promise((resolve, reject) => {
+                const r = new FileReader();
+                r.onload = () => resolve(r.result);
+                r.onerror = () => reject(r.error || new Error('文件读取失败'));
+                r.readAsDataURL(file);
+            });
+        }
+
+        // 编辑记录靠名字引用 logo，所以名字得唯一，重名的加序号
+        function uniqueLogoName(fileName) {
+            const stem = (fileName || '').replace(/\.[^.]+$/, '').trim() || 'logo';
+            const taken = new Set(logoImages.map(l => l.name));
+            if (!taken.has(stem)) return stem;
+            let i = 2;
+            while (taken.has(`${stem}_${i}`)) i++;
+            return `${stem}_${i}`;
+        }
+        // 逐个处理保证多选时顺序稳定；每存一个就刷新一次，缩略图立刻出现，不用等整批
+        async function addLogoFiles(files) {
+            const list = Array.from(files || []);
+            if (list.length === 0) return;
+            const failed = [];
+            const unsaved = [];
+            const allBlank = [];
+
+            for (const file of list) {
+                const mime = resolveMime(file);
+                if (!mime) { failed.push(file.name); continue; }
+                try {
+                    const dataUrl = await fileToDataUrl(file);
+                    const img = await decodeImage(dataUrl);
+                    // 没有固有尺寸的 svg 会解出 0×0，放上去是完全看不见的，直接当失败
+                    if (!(img.width > 0 && img.height > 0)) {
+                        failed.push(file.name);
+                        continue;
+                    }
+                    const trim = trimLogoSrc(img);
+                    // 整张都是空白，留下来也是个看不见的东西
+                    if (trim.status === 'blank') { allBlank.push(file.name); continue; }
+                    const trimSrc = trim.status === 'ok' ? trim.src : dataUrl;
+                    const trimImg = trim.status === 'ok' ? await decodeImage(trimSrc) : img;
+
+                    const src = normalizeLogoSrc(trimImg, trimSrc);
+                    // 缩过的要按缩后的结果重新解码，img.width 得和 src 对得上
+                    const finalImg = src === trimSrc ? trimImg : await decodeImage(src);
+                    const item = {
+                        name: uniqueLogoName(file.name),
+                        src,
+                        light: logoLightness(finalImg) > LOGO_LIGHT_THRESHOLD,
+                        custom: true,
+                        // 记下裁了多少，缩略图 tooltip 上能看到，省得怀疑是不是没裁
+                        trim: trim.status === 'ok' ? { from: trim.from, to: trim.to } : null,
+                        time: Date.now()
+                    };
+                    customLogos.push({ ...item, img: finalImg });
+                    rebuildLogoList();
+                    renderLogoPanel();
+                    renderGallery();
+                    try {
+                        await dbPut(STORE_LOGOS, item.name, item);
+                    } catch (err) {
+                        console.warn('logo 写入失败，本次仅当前页面可用', err);
+                        unsaved.push(item.name);
+                    }
+                } catch (err) {
+                    console.warn('logo 处理失败', file.name, err);
+                    failed.push(file.name);
+                }
+            }
+
+            const notes = [];
+            if (failed.length) {
+                notes.push('以下文件不是可用的图片，已跳过：\n' + failed.join('\n'));
+            }
+            if (allBlank.length) {
+                notes.push('以下文件整张都是空白（全透明或纯色），没有可用图形，已跳过：\n' +
+                    allBlank.join('\n'));
+            }
+            if (unsaved.length) {
+                notes.push('以下 logo 存不进本地数据库（无痕模式常见），刷新后会消失：\n' +
+                    unsaved.join('\n'));
+            }
+            if (notes.length) alert(notes.join('\n\n'));
+        }
+
+        logoFileInput.addEventListener('change', (e) => {
+            const files = Array.from(e.target.files);
+            // 清掉 value，下次选同一个文件也还能触发 change
+            e.target.value = '';
+            addLogoFiles(files);
+        });
+
+        // ===== 顶部 logo 素材区 =====
+        // 上传入口不能只挂在单张图片的选择器里：没传图时那一排根本不存在，入口也就找不到
+        const logoPanelBody = document.getElementById('logoPanelBody');
+        const logoPanelTitle = document.getElementById('logoPanelTitle');
+        const logoPanelCaret = document.getElementById('logoPanelCaret');
+        let logoPanelOpen = true;
+
+        function toggleLogoPanel() {
+            logoPanelOpen = !logoPanelOpen;
+            logoPanelBody.style.display = logoPanelOpen ? 'block' : 'none';
+            logoPanelCaret.textContent = logoPanelOpen ? '▼' : '▶';
+        }
+
+        function renderLogoPanel() {
+            const n = customLogos.length;
+            logoPanelTitle.textContent = n
+                ? `Logo 素材（内置 ${builtinLogos.length} 个 · 自己上传 ${n} 个）`
+                : `Logo 素材（内置 ${builtinLogos.length} 个，可上传自己的）`;
+
+            logoPanelBody.innerHTML = '';
+            logoPanelBody.appendChild(buildLogoPicker(null));
+
+            const hint = document.createElement('div');
+            hint.className = 'size-note';
+            hint.style.marginTop = '10px';
+            hint.textContent = '这里只管理素材。上传后会出现在下面每张图片的 logo 一排里，' +
+                '在那里点选才会叠到图上。上传时会自动裁掉四周空白边，' +
+                '悬浮在缩略图上能看到裁了多少。虚线框是自己上传的，点左上角 ✕ 删除。';
+            logoPanelBody.appendChild(hint);
+        }
+
+        // 删除：正在用它的图片一并撤掉 logo，不留指向已删素材的引用
+        async function deleteCustomLogo(name) {
+            const inUse = croppers.filter(c => c.logo && c.logo.name === name).length;
+            const msg = inUse
+                ? `删除 logo「${name}」？当前有 ${inUse} 张图在用，会一并移除它们的 logo。`
+                : `删除 logo「${name}」？`;
+            if (!confirm(msg)) return;
+
+            customLogos = customLogos.filter(l => l.name !== name);
+            rebuildLogoList();
+            croppers.forEach(c => { if (c.logo && c.logo.name === name) c.logo = null; });
+            renderLogoPanel();
+            renderGallery();
+            scheduleAutosave();
+            try {
+                await dbDel(STORE_LOGOS, name);
+            } catch (err) {
+                alert('从本地数据库删除失败，刷新后可能还在：' +
+                    (err && err.message ? err.message : err));
+            }
+        }
 
         // 按内容算键，同一张图重复上传只存一份。
         // 整串 dataURL 逐字符哈希在几十 MB 上太慢，改成跨步采样，
@@ -1590,39 +1965,11 @@
 
                     const logoLabel = document.createElement('div');
                     logoLabel.className = 'section-label';
-                    logoLabel.textContent = 'Logo（点击添加，再点一次取消）｜角标 1/2/3 是同名的不同版本';
+                    logoLabel.textContent = 'Logo（点击添加，再点一次取消）｜角标 1/2/3 是同名的不同版本' +
+                        '｜虚线框是自己上传的，鼠标移上去可删除';
                     item.appendChild(logoLabel);
 
-                    const picker = document.createElement('div');
-                    picker.className = 'logo-picker';
-                    groupLogos(logoImages).forEach(group => {
-                        const col = document.createElement('div');
-                        col.className = 'logo-group';
-                        group.forEach(logo => {
-                            const thumb = document.createElement('div');
-                            thumb.className = 'logo-thumb ' +
-                                (logo.light ? 'on-dark' : 'on-light') +
-                                (cropper.logo && cropper.logo.name === logo.name ? ' active' : '');
-                            thumb.title = logo.name;
-                            const thumbImg = document.createElement('img');
-                            thumbImg.src = logo.src;
-                            thumbImg.alt = logo.name;
-                            thumb.appendChild(thumbImg);
-                            if (logo.variant) {
-                                const badge = document.createElement('span');
-                                badge.className = 'logo-badge';
-                                badge.textContent = logo.variant;
-                                thumb.appendChild(badge);
-                            }
-                            thumb.onclick = () => {
-                                cropper.setLogo(logo);
-                                renderGallery();
-                            };
-                            col.appendChild(thumb);
-                        });
-                        picker.appendChild(col);
-                    });
-                    item.appendChild(picker);
+                    item.appendChild(buildLogoPicker(cropper));
 
                     if (cropper.logo) {
                         const logoControls = document.createElement('div');
@@ -1656,6 +2003,82 @@
 
                 gallery.appendChild(item);
             });
+        }
+
+        // 缩略图的悬浮说明。裁过边的把裁剪前后尺寸写出来，
+        // 否则裁完看不出发生过什么，容易怀疑是不是没生效
+        function logoTitle(logo, cropper) {
+            const parts = [logo.name];
+            if (logo.trim && logo.trim.from && logo.trim.to) {
+                parts.push(`已裁掉空白边：${logo.trim.from.join('×')} → ${logo.trim.to.join('×')}`);
+            }
+            if (!cropper) parts.push('到下面每张图片的 logo 一排里点选才会叠到图上');
+            return parts.join('\n');
+        }
+
+        // logo 选择器，单张图片和顶部素材区共用。
+        // cropper 为 null 时是素材管理模式：不选中、不高亮，但删除和上传照常
+        function buildLogoPicker(cropper) {
+            const picker = document.createElement('div');
+            picker.className = 'logo-picker' + (cropper ? '' : ' manage');
+
+            groupLogos(logoImages).forEach(group => {
+                const col = document.createElement('div');
+                col.className = 'logo-group';
+                group.forEach(logo => {
+                    const thumb = document.createElement('div');
+                    thumb.className = 'logo-thumb ' +
+                        (logo.light ? 'on-dark' : 'on-light') +
+                        (logo.custom ? ' custom' : '') +
+                        (cropper && cropper.logo && cropper.logo.name === logo.name ? ' active' : '');
+                    thumb.title = logoTitle(logo, cropper);
+
+                    const thumbImg = document.createElement('img');
+                    thumbImg.src = logo.src;
+                    thumbImg.alt = logo.name;
+                    thumb.appendChild(thumbImg);
+
+                    if (logo.variant) {
+                        const badge = document.createElement('span');
+                        badge.className = 'logo-badge';
+                        badge.textContent = logo.variant;
+                        thumb.appendChild(badge);
+                    }
+                    // 只有自己上传的才给删除入口，内置素材不能删
+                    if (logo.custom) {
+                        const del = document.createElement('button');
+                        del.className = 'logo-del';
+                        del.textContent = '✕';
+                        del.title = '删除这个 logo';
+                        del.onclick = (e) => {
+                            e.stopPropagation();  // 别顺带把 logo 选上
+                            deleteCustomLogo(logo.name);
+                        };
+                        thumb.appendChild(del);
+                    }
+
+                    if (cropper) {
+                        thumb.onclick = () => {
+                            cropper.setLogo(logo);
+                            renderGallery();
+                        };
+                    } else {
+                        // 素材区不绑定具体图片，点了没有意义，光标也别给成手型
+                        thumb.style.cursor = 'default';
+                    }
+                    col.appendChild(thumb);
+                });
+                picker.appendChild(col);
+            });
+
+            const addLogo = document.createElement('button');
+            addLogo.className = 'logo-add';
+            addLogo.innerHTML = '<span class="plus">＋</span><span>上传 logo</span>';
+            addLogo.title = '上传自己的 logo（支持多选，透明背景请用 PNG/WebP）';
+            addLogo.onclick = () => logoFileInput.click();
+            picker.appendChild(addLogo);
+
+            return picker;
         }
 
         // 按 base 分组并保持原顺序；没有 base 字段的各自独立成组
@@ -1835,11 +2258,18 @@
         // 尺寸相关的界面不依赖 logo，先立刻就位
         applySizeCss();
         syncSizeUI();
+        // 素材还在解码，先把面板和上传入口摆出来，免得它迟一步才冒出来
+        renderLogoPanel();
 
-        preloadLogos().then(list => {
+        preloadLogos().catch(err => {
+            // logo 挂了不该连带让编辑记录也不见，这里咽掉继续往下走
+            console.warn('logo 素材加载失败', err);
+            return [];
+        }).then(list => {
             if (list.length === 0) {
                 console.warn('没有可用的 logo');
             }
+            renderLogoPanel();
             if (croppers.length > 0) renderGallery();
             // 还原时要按名字找回 logo 对象，所以等素材加载完再处理记录。
             // 先判断上次那份是否还挂着，renderHistory 要靠这个标记决定怎么标
