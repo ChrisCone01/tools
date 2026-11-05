@@ -1,0 +1,1347 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>视频素材合成工具</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0c0d10;--panel:#15171c;--panel2:#1c1f26;--line:#282c35;
+  --text:#e6e8ec;--muted:#868d99;--accent:#ff3b5c;--ok:#31c48d;
+}
+html,body{height:100%}
+body{
+  background:var(--bg);color:var(--text);font-size:13px;overflow:hidden;user-select:none;
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+}
+.app{display:flex;height:100vh}
+
+/* ---------- 侧栏 ---------- */
+.sidebar{width:352px;flex:none;background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column}
+.brand{padding:15px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px}
+.logo-dot{width:26px;height:26px;border-radius:8px;background:linear-gradient(135deg,var(--accent),#ff7a45);flex:none}
+.brand h1{font-size:13px;font-weight:600;letter-spacing:.2px}
+.brand p{font-size:10.5px;color:var(--muted);margin-top:2px}
+.scroll{flex:1;overflow-y:auto;padding:13px}
+.scroll::-webkit-scrollbar{width:8px}
+.scroll::-webkit-scrollbar-thumb{background:#2c313a;border-radius:4px}
+
+.card{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:11px;margin-bottom:10px}
+.card h2{
+  font-size:10.5px;font-weight:600;color:var(--muted);letter-spacing:.7px;text-transform:uppercase;
+  margin-bottom:9px;display:flex;justify-content:space-between;align-items:center;gap:8px;
+}
+.card h2 .tag{font-size:9.5px;padding:2px 6px;border-radius:5px;background:#23272f;color:var(--muted);letter-spacing:0;text-transform:none;font-weight:500;flex:none}
+.card h2 .tag.ok{background:rgba(49,196,141,.15);color:var(--ok)}
+
+.slot{
+  border:1.5px dashed #333844;border-radius:8px;padding:11px 10px;
+  cursor:pointer;transition:.15s;color:var(--muted);font-size:12px;
+  display:flex;align-items:center;gap:10px;
+}
+.slot:hover{border-color:var(--accent);color:var(--text);background:rgba(255,59,92,.05)}
+.slot.filled{border-style:solid;border-color:#2f3540;background:#12141a;color:var(--text)}
+.slot .ico{
+  width:34px;height:30px;flex:none;border-radius:5px;background:#0a0b0e;
+  display:flex;align-items:center;justify-content:center;font-size:14px;overflow:hidden;color:#5a616d;
+}
+.slot.filled .ico{background:#0a0b0e}
+.slot .ico img{max-width:100%;max-height:100%;object-fit:contain}
+.slot .txt{flex:1;min-width:0}
+.slot .name{font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.slot .meta{font-size:10px;color:var(--muted);margin-top:2px;font-variant-numeric:tabular-nums}
+.slot input{display:none}
+
+.vslot .ico{width:34px;height:30px}
+.vslot .ico img{display:none}
+
+.btn{
+  display:flex;align-items:center;justify-content:center;gap:6px;
+  background:#262a33;border:1px solid #333844;color:var(--text);
+  border-radius:7px;padding:8px 12px;font-size:12px;cursor:pointer;transition:.15s;
+  font-family:inherit;
+}
+.btn:hover{background:#2e333d;border-color:#414855}
+.btn:active{transform:translateY(1px)}
+.btn:disabled{opacity:.4;cursor:not-allowed;transform:none}
+.btn.primary{background:linear-gradient(135deg,var(--accent),#ff5a5f);border:none;font-weight:600;color:#fff;padding:8px 20px}
+.btn.primary:hover{filter:brightness(1.08)}
+
+.hint{font-size:10.5px;color:var(--muted);line-height:1.65;margin-top:8px}
+.hint b{color:#b9bfca;font-weight:500}
+
+/* ---------- 微调 ---------- */
+.tweak{display:none;margin-top:10px;padding-top:10px;border-top:1px solid #242832}
+.tweak.on{display:block}
+.tweak-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.tweak-head span{font-size:11px;color:var(--text)}
+.tweak-head button{
+  background:transparent;border:none;color:var(--muted);font-size:10.5px;
+  cursor:pointer;font-family:inherit;padding:2px 6px;border-radius:4px;
+}
+.tweak-head button:hover{color:var(--accent);background:rgba(255,59,92,.08)}
+.nums{display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px}
+/* 标签即滑块：整块横条都能拖，热区做大 */
+.num label{
+  display:flex;align-items:center;justify-content:center;
+  font-size:10.5px;color:var(--muted);letter-spacing:.3px;
+  padding:7px 2px;margin-bottom:4px;border-radius:6px;
+  background:#14171d;border:1px solid transparent;
+  cursor:ew-resize;user-select:none;-webkit-user-select:none;
+  transition:background .12s,color .12s,border-color .12s;
+  position:relative;
+}
+.num label::before{content:"‹";opacity:.35;margin-right:3px;font-size:11px}
+.num label::after{content:"›";opacity:.35;margin-left:3px;font-size:11px}
+.num label:hover{background:#1e232b;color:var(--text);border-color:#333a45}
+.num label.scrubbing{background:rgba(255,59,92,.14);color:#fff;border-color:var(--accent)}
+.num.scrubbing input{border-color:var(--accent);background:#1a1116}
+.num input{
+  width:100%;background:#0e1015;border:1px solid #2b303a;color:var(--text);
+  border-radius:5px;padding:5px 6px;font-size:11.5px;font-family:inherit;
+  font-variant-numeric:tabular-nums;outline:none;text-align:center;
+}
+.num input:focus{border-color:var(--accent)}
+input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
+body.scrubbing,body.scrubbing *{cursor:ew-resize !important}
+
+/* ---------- 舞台 ---------- */
+.stage-wrap{flex:1;display:flex;flex-direction:column;min-width:0;position:relative}
+.stage{
+  flex:1;display:flex;align-items:center;justify-content:center;padding:26px;min-height:0;
+  background:radial-gradient(circle at 50% 35%,#15181e,#090a0d 75%);
+}
+#preview{
+  max-width:100%;max-height:100%;display:block;border-radius:3px;
+  box-shadow:0 10px 50px rgba(0,0,0,.7);cursor:default;
+}
+#preview.grab{cursor:grab}
+#preview.grabbing{cursor:grabbing}
+
+.toolbar{
+  flex:none;border-top:1px solid var(--line);background:var(--panel);
+  padding:10px 18px;display:flex;align-items:center;gap:14px;
+}
+.play-btn{
+  width:34px;height:34px;border-radius:50%;border:1px solid #333844;background:#262a33;
+  color:var(--text);cursor:pointer;display:flex;align-items:center;justify-content:center;
+  font-size:12px;flex:none;transition:.15s;
+}
+.play-btn:hover{background:#31363f}
+.play-btn:disabled{opacity:.35;cursor:not-allowed}
+.time{font-size:11.5px;color:var(--muted);font-variant-numeric:tabular-nums;flex:none;min-width:96px}
+.scrub{flex:1;height:4px;background:#262a33;border-radius:2px;position:relative;cursor:pointer}
+.scrub-fill{height:100%;background:var(--accent);border-radius:2px;width:0;pointer-events:none}
+.scrub-head{position:absolute;top:50%;width:11px;height:11px;border-radius:50%;background:#fff;transform:translate(-50%,-50%);pointer-events:none;box-shadow:0 1px 4px rgba(0,0,0,.5)}
+.export-box{flex:none}
+.progress{position:absolute;left:0;right:0;bottom:0;height:3px;background:#262a33;display:none}
+.progress.on{display:block}
+.progress i{display:block;height:100%;background:linear-gradient(90deg,var(--accent),#ff7a45);width:0;transition:width .1s linear}
+
+/* ---------- 提示 ---------- */
+.toast{
+  position:fixed;left:50%;bottom:78px;transform:translate(-50%,14px);
+  background:#22262e;border:1px solid #333844;color:var(--text);
+  padding:9px 16px;border-radius:8px;font-size:12px;opacity:0;pointer-events:none;
+  transition:.2s;z-index:99;box-shadow:0 8px 30px rgba(0,0,0,.6);max-width:70vw;text-align:center;
+}
+.toast.on{opacity:1;transform:translate(-50%,0)}
+.toast.err{border-color:rgba(255,59,92,.5)}
+.toast.ok{border-color:rgba(49,196,141,.5)}
+
+.dragmask{
+  position:fixed;inset:0;background:rgba(255,59,92,.1);border:2px dashed var(--accent);
+  display:none;align-items:center;justify-content:center;font-size:16px;z-index:200;
+}
+.dragmask.on{display:flex}
+
+details summary{cursor:pointer;color:var(--muted);font-size:11px;outline:none;list-style:none}
+details summary::-webkit-details-marker{display:none}
+details summary::before{content:"▸ ";display:inline-block;transition:.15s}
+details[open] summary::before{transform:rotate(90deg)}
+details[open] summary{color:var(--text)}
+details .body{font-size:11px;color:var(--muted);line-height:1.75;margin-top:9px}
+details .body b{color:#b9bfca;font-weight:500}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="logo-dot"></div>
+      <div>
+        <h1>视频素材合成</h1>
+        <p>上传视频和三个素材 · 自动对位 · 导出</p>
+      </div>
+    </div>
+
+    <!-- 浏览器不兼容时显示 -->
+    <div id="browserWarn" style="display:none;margin:10px 13px 0;padding:9px 11px;border-radius:8px;
+         background:rgba(240,160,32,.12);border:1px solid rgba(240,160,32,.4);
+         font-size:11px;line-height:1.65;color:#f0c060">
+      <b>建议换用 Chrome 或 Edge</b><br>
+      当前浏览器（很可能是 Safari）对网页录制的支持不完整，导出可能失败或没有声音。
+      <br><span style="color:#c9a05a">Mac 上建议装 Chrome 打开这个文件。</span>
+    </div>
+
+    <div class="scroll">
+
+      <!-- 视频 -->
+      <section class="card">
+        <h2>视频 <span class="tag" id="videoTag">未上传</span></h2>
+        <label class="slot vslot" id="slotVideo">
+          <div class="ico">▶</div>
+          <div class="txt">
+            <div class="name" id="videoName">点击或拖入 mp4</div>
+            <div class="meta" id="videoMeta">支持 mp4 / mov / webm</div>
+          </div>
+          <input type="file" id="inputVideo" accept="video/*">
+        </label>
+      </section>
+
+      <!-- 三个素材 -->
+      <section class="card">
+        <h2>素材 <span class="tag" id="assetTag">0 / 3</span></h2>
+
+        <label class="slot" id="slotLogo" style="margin-bottom:8px">
+          <div class="ico">▤</div>
+          <div class="txt">
+            <div class="name" id="logoName">顶部 logo</div>
+            <div class="meta" id="logoMeta">未上传</div>
+          </div>
+          <input type="file" id="inputLogo" accept="image/*">
+        </label>
+
+        <label class="slot" id="slotSearch" style="margin-bottom:8px">
+          <div class="ico">⌕</div>
+          <div class="txt">
+            <div class="name" id="searchName">底部搜索框</div>
+            <div class="meta" id="searchMeta">未上传</div>
+          </div>
+          <input type="file" id="inputSearch" accept="image/*">
+        </label>
+
+        <label class="slot" id="slotCorner">
+          <div class="ico">◤</div>
+          <div class="txt">
+            <div class="name" id="cornerName">左下角标</div>
+            <div class="meta" id="cornerMeta">未上传</div>
+          </div>
+          <input type="file" id="inputCorner" accept="image/*">
+        </label>
+
+        <div class="hint">
+          三个都上传后自动贴位。尺寸固定 100% 不变，顶部咬住上边、底部咬住下边、角标贴住左下角。
+        </div>
+      </section>
+
+      <!-- 微调 -->
+      <section class="card">
+        <h2>微调 <span class="tag" id="tweakTag">可选</span></h2>
+        <div class="hint" style="margin-top:0">
+          位置已自动贴好，尺寸都是 100%。需要微调时，在画布上直接拖动素材，或用方向键。
+        </div>
+
+        <div class="tweak" id="tweak">
+          <div class="tweak-head">
+            <span id="tweakTitle">—</span>
+            <button id="resetOne">恢复默认位置</button>
+          </div>
+          <div class="nums">
+            <div class="num"><label id="lblX" title="左右拖动以调整 X">X</label><input type="number" id="inX" step="1"></div>
+            <div class="num"><label id="lblY" title="左右拖动以调整 Y">Y</label><input type="number" id="inY" step="1"></div>
+            <div class="num"><label id="lblS" title="左右拖动以缩放">缩放 %</label><input type="number" id="inS" step="1"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <details>
+          <summary>使用说明</summary>
+          <div class="body">
+            <b>1.</b> 上传视频。<br>
+            <b>2.</b> 上传三张素材：顶部 logo、底部搜索框、左下角标。<br>
+            <b>3.</b> 在画布上预览，需要的话拖动微调。<br>
+            <b>4.</b> 点右下角「导出视频」，进度条走完后自动下载。<br><br>
+            <b>导出：</b>实时录制，15 秒视频约需 15 秒。导出期间<b>不要切换标签页</b>，否则可能掉帧。
+          </div>
+        </details>
+      </section>
+
+    </div>
+  </aside>
+
+  <main class="stage-wrap">
+    <div class="stage">
+      <canvas id="preview" width="1280" height="720"></canvas>
+    </div>
+    <div class="toolbar">
+      <button class="play-btn" id="playBtn" disabled>▶</button>
+      <div class="time" id="timeText">00:00 / 00:00</div>
+      <div class="scrub" id="scrub"><div class="scrub-fill" id="scrubFill"></div><div class="scrub-head" id="scrubHead" style="left:0"></div></div>
+      <div class="export-box">
+        <button class="btn primary" id="exportBtn" disabled>导出视频</button>
+      </div>
+    </div>
+    <div class="progress" id="progress"><i id="progressFill"></i></div>
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+<div class="dragmask" id="dragmask">松开以添加文件</div>
+
+<script>
+(function(){
+"use strict";
+
+/* ============================================================
+   绝对像素定位：尺寸固定 100%，不随视频尺寸缩放
+   顶部/底部元素始终咬住对应的边，边距是固定的像素值
+   ============================================================ */
+
+// 三个素材槽位的固定配置
+// 尺寸永远 100%，位置按「边」锚定，边距是不变的像素值
+var SLOT_DEFS = {
+  logo:   { key:'logo',   label:'顶部 logo',  edge:'top',    align:'center', gap: 24 },
+  search: { key:'search', label:'底部搜索框', edge:'bottom', align:'center', gap: 30 },
+  corner: { key:'corner', label:'左下角标',   edge:'bottom', align:'left',   gap:  0 }
+};
+
+var state = {
+  videoEl: null,
+  videoUrl: null,
+  vMeta: null,
+  assets: {},          // key -> { img, canvasW, canvasH, contentBox, dx, dy, scale, visible, name }
+  selectedKey: null,
+  exporting: false,
+  playing: false,
+  rafId: 0,
+  audioCtx: null,
+  audioDest: null,
+  audioSrc: null,
+  audioVideoEl: null,          // 音频图当前绑定的 video 元素
+  hasAudio: false,             // 当前视频是否带音轨
+  guides: { v:false, h:false },  // 居中参考线状态
+  guideTimer: 0
+};
+
+var canvas = document.getElementById('preview');
+var ctx = canvas.getContext('2d');
+
+/* ===================== 工具 ===================== */
+function $(id){ return document.getElementById(id); }
+
+var toastTimer = 0;
+function toast(msg, type){
+  var el = $('toast');
+  el.textContent = msg;
+  el.className = 'toast on' + (type ? ' ' + type : '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function(){ el.className = 'toast' + (type ? ' ' + type : ''); }, 2800);
+}
+
+function fmtTime(s){
+  if (!isFinite(s) || s < 0) s = 0;
+  var m = Math.floor(s / 60), ss = Math.floor(s % 60);
+  return (m < 10 ? '0' : '') + m + ':' + (ss < 10 ? '0' : '') + ss;
+}
+
+function readAsDataURL(file){
+  return new Promise(function(resolve, reject){
+    var r = new FileReader();
+    r.onload = function(){ resolve(r.result); };
+    r.onerror = function(){ reject(new Error('读取失败')); };
+    r.readAsDataURL(file);
+  });
+}
+
+function loadImage(src){
+  return new Promise(function(resolve, reject){
+    var img = new Image();
+    img.onload = function(){ resolve(img); };
+    img.onerror = function(){ reject(new Error('图片解码失败')); };
+    img.src = src;
+  });
+}
+
+// 素材透明边检测：拿到真正有内容的矩形，用于精确对位
+function getContentBox(img){
+  var MAXPIX = 40e6;
+  var W = img.naturalWidth, H = img.naturalHeight, k = 1;
+  if (W * H > MAXPIX){
+    k = Math.sqrt(MAXPIX / (W * H));
+    W = Math.max(1, Math.round(W * k));
+    H = Math.max(1, Math.round(H * k));
+  }
+  var c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  var cc = c.getContext('2d', { willReadFrequently: true });
+  cc.clearRect(0, 0, W, H);
+  cc.drawImage(img, 0, 0, W, H);
+  var d = cc.getImageData(0, 0, W, H).data;
+
+  var minX = W, minY = H, maxX = -1, maxY = -1;
+  for (var y = 0; y < H; y++){
+    var row = y * W;
+    for (var x = 0; x < W; x++){
+      if (d[(row + x) * 4 + 3] > 8){
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+  if (maxX < 0) return { x:0, y:0, w:img.naturalWidth, h:img.naturalHeight };
+  var inv = 1 / k;
+  return {
+    x: Math.round(minX * inv),
+    y: Math.round(minY * inv),
+    w: Math.round((maxX - minX + 1) * inv),
+    h: Math.round((maxY - minY + 1) * inv)
+  };
+}
+
+/* ===================== 素材放置 ===================== */
+// 锚定式定位：位置永远由「锚定规则 + 当前缩放」算出来
+//   居中元素（顶部 logo / 底部搜索框）：无论放大多少倍都保持水平居中
+//   靠左元素（左下角标）：无论放大多少倍都贴住左边和下边
+// 手动微调只记录一个偏移量 dx/dy，不破坏锚定关系
+function anchoredPos(key, asset){
+  var def = SLOT_DEFS[key];
+  var cb = asset.contentBox;
+  var s = asset.scale || 1;
+
+  var contentX;
+  if (def.align === 'center'){
+    // 用缩放后的实际宽度居中，放大后依然在正中间
+    contentX = (canvas.width - cb.w * s) / 2;
+  } else {
+    contentX = 0;                  // 靠左，贴住左缘
+  }
+  contentX += (asset.dx || 0);
+
+  var contentY;
+  if (def.edge === 'top'){
+    contentY = def.gap;            // 距顶固定
+  } else {
+    contentY = canvas.height - def.gap - cb.h * s;   // 贴住底边
+  }
+  contentY += (asset.dy || 0);
+
+  return {
+    x: Math.round(contentX - cb.x * s),
+    y: Math.round(contentY - cb.y * s)
+  };
+}
+
+// 把锚定结果写回素材的 x/y（不改缩放）
+function applyAnchor(key){
+  var a = state.assets[key];
+  if (!a) return;
+  var p = anchoredPos(key, a);
+  a.x = p.x;
+  a.y = p.y;
+}
+
+// 居中对齐：拖动时如果接近画布中线，就吸附过去并点亮参考线
+// 用的是素材「内容」的中心点，不是图片画布，透明边不影响判断
+function snapToCenter(key){
+  var a = state.assets[key];
+  if (!a) return;
+  var cb = a.contentBox;
+  var s = a.scale;
+  var W = canvas.width, H = canvas.height;
+
+  var cx = a.x + cb.x * s + cb.w * s / 2;
+  var cy = a.y + cb.y * s + cb.h * s / 2;
+
+  var tolX = Math.max(6, W * 0.005);
+  var tolY = Math.max(6, H * 0.005);
+
+  state.guides.v = false;
+  state.guides.h = false;
+
+  if (Math.abs(cx - W / 2) <= tolX){
+    a.dx = (a.dx || 0) + (W / 2 - cx);
+    state.guides.v = true;
+  }
+  if (Math.abs(cy - H / 2) <= tolY){
+    a.dy = (a.dy || 0) + (H / 2 - cy);
+    state.guides.h = true;
+  }
+
+  if (state.guides.v || state.guides.h) applyAnchor(key);
+}
+
+// 松手后收起参考线
+function clearGuides(){
+  if (state.guides.v || state.guides.h){
+    state.guides.v = false;
+    state.guides.h = false;
+    draw();
+  }
+}
+
+function placeAsset(key){
+  var a = state.assets[key];
+  if (!a) return;
+  a.scale = 1;        // 默认 100%
+  a.dx = 0;           // 无偏移
+  a.dy = 0;
+  a.tweaked = false;
+  applyAnchor(key);
+}
+
+function resetAllPositions(){
+  Object.keys(state.assets).forEach(placeAsset);
+}
+
+async function handleAsset(key, file){
+  if (!file) return false;
+  if (!/^image\//.test(file.type)){ toast('请选择图片文件', 'err'); return false; }
+
+  try {
+    var dataUrl = await readAsDataURL(file);
+    var img = await loadImage(dataUrl);
+    var cb = getContentBox(img);
+
+    state.assets[key] = {
+      img: img,
+      name: file.name,
+      canvasW: img.naturalWidth,
+      canvasH: img.naturalHeight,
+      contentBox: cb,
+      visible: true,
+      tweaked: false,
+      x: 0, y: 0, scale: 1
+    };
+
+    placeAsset(key);
+    updateSlotUI(key, true);
+    updateAssetTag();
+
+    if (state.selectedKey === key) updateTweakPanel();
+    draw();
+    return true;
+  } catch(err){
+    toast('素材加载失败：' + err.message, 'err');
+    return false;
+  }
+}
+
+function updateSlotUI(key, filled){
+  var map = {
+    logo:   { slot:'slotLogo',   name:'logoName',   meta:'logoMeta',   def:'顶部 logo' },
+    search: { slot:'slotSearch', name:'searchName', meta:'searchMeta', def:'底部搜索框' },
+    corner: { slot:'slotCorner', name:'cornerName', meta:'cornerMeta', def:'左下角标' }
+  };
+  var m = map[key];
+  var slotEl = $(m.slot);
+  var a = state.assets[key];
+
+  if (filled && a){
+    slotEl.classList.add('filled');
+    // 缩略图
+    var ico = slotEl.querySelector('.ico');
+    ico.innerHTML = '';
+    var im = document.createElement('img');
+    im.src = a.img.src;
+    ico.appendChild(im);
+
+    $(m.name).textContent = m.def + ' · ' + a.name;
+    $(m.meta).textContent = a.canvasW + ' × ' + a.canvasH;
+  } else {
+    slotEl.classList.remove('filled');
+    var ico2 = slotEl.querySelector('.ico');
+    ico2.innerHTML = { logo:'▤', search:'⌕', corner:'◤' }[key];
+    $(m.name).textContent = m.def;
+    $(m.meta).textContent = '未上传';
+  }
+}
+
+function updateAssetTag(){
+  var n = Object.keys(state.assets).filter(function(k){ return state.assets[k].visible; }).length;
+  var total = Object.keys(state.assets).length;
+  $('assetTag').textContent = total + ' / 3';
+  $('assetTag').className = 'tag' + (total === 3 ? ' ok' : '');
+  $('exportBtn').disabled = !(state.videoEl && total > 0);
+}
+
+/* ===================== 视频 ===================== */
+async function handleVideoFile(file){
+  if (!file) return;
+  try {
+    // 用 object URL 而不是 base64：大视频不会把内存撑爆，
+    // Safari 对超长 data URL 也有长度限制，Mac 上会直接加载失败
+    if (state.videoUrl) { try { URL.revokeObjectURL(state.videoUrl); } catch(e){} }
+    var objUrl = URL.createObjectURL(file);
+    state.videoUrl = objUrl;
+
+    var v = document.createElement('video');
+    v.preload = 'auto';
+    v.playsInline = true;
+    v.setAttribute('playsinline', '');
+    v.src = objUrl;
+
+    await new Promise(function(resolve, reject){
+      var done = false;
+      v.onloadedmetadata = function(){ if (!done){ done = true; resolve(); } };
+      v.onerror = function(){ if (!done){ done = true; reject(new Error('视频无法解码')); } };
+      setTimeout(function(){
+        if (!done){ done = true; v.videoWidth ? resolve() : reject(new Error('加载超时')); }
+      }, 15000);
+    });
+
+    try { await v.play(); v.pause(); } catch(e){}
+    try {
+      await new Promise(function(r){
+        v.currentTime = 0.01;
+        var f = function(){ v.removeEventListener('seeked', f); r(); };
+        v.addEventListener('seeked', f);
+        setTimeout(r, 800);
+      });
+    } catch(e){}
+    v.currentTime = 0;
+
+    // 换了视频：旧音频图绑的是旧元素，必须拆掉重建，否则新视频导出没声音
+    if (state.audioCtx && state.audioVideoEl !== v) teardownAudioGraph();
+
+    state.videoEl = v;
+    state.hasAudio = detectAudio(v);
+    state.vMeta = {
+      w: v.videoWidth,
+      h: v.videoHeight,
+      duration: isFinite(v.duration) ? v.duration : 0,
+      name: file.name
+    };
+
+    canvas.width = v.videoWidth;
+    canvas.height = v.videoHeight;
+
+    // 换了视频尺寸 —— 素材尺寸不变，只重新咬住各自的边
+    resetAllPositions();
+
+    var slot = $('slotVideo');
+    slot.classList.add('filled');
+    slot.querySelector('.ico').textContent = '▶';
+    $('videoName').textContent = file.name;
+    $('videoMeta').textContent = v.videoWidth + ' × ' + v.videoHeight + ' · ' + fmtTime(v.duration) +
+      ' · ' + (state.hasAudio ? '有声音' : '无音轨');
+
+    $('videoTag').textContent = '已就绪';
+    $('videoTag').className = 'tag ok';
+    $('playBtn').disabled = false;
+
+    bindVideoEvents(v);
+    updateTimeUI();
+    updateAssetTag();
+    draw();
+
+    toast('视频已加载 · ' + (state.hasAudio ? '导出会保留声音' : '该视频没有音轨'), 'ok');
+  } catch(err){
+    toast('视频加载失败：' + err.message, 'err');
+  }
+}
+
+function bindVideoEvents(v){
+  v.addEventListener('timeupdate', updateTimeUI);
+  v.addEventListener('play', function(){
+    state.playing = true;
+    $('playBtn').textContent = '❚❚';
+    startLoop();
+  });
+  v.addEventListener('pause', function(){
+    state.playing = false;
+    $('playBtn').textContent = '▶';
+    stopLoop();
+    draw();
+  });
+  v.addEventListener('ended', function(){
+    state.playing = false;
+    $('playBtn').textContent = '▶';
+    stopLoop();
+    draw();
+  });
+}
+
+function startLoop(){
+  stopLoop();
+  var tick = function(){
+    draw();
+    if (state.playing) state.rafId = requestAnimationFrame(tick);
+  };
+  state.rafId = requestAnimationFrame(tick);
+}
+function stopLoop(){
+  if (state.rafId){ cancelAnimationFrame(state.rafId); state.rafId = 0; }
+}
+
+function updateTimeUI(){
+  var v = state.videoEl;
+  if (!v) return;
+  var cur = v.currentTime || 0;
+  var dur = (state.vMeta && state.vMeta.duration) || 0;
+  $('timeText').textContent = fmtTime(cur) + ' / ' + fmtTime(dur);
+  var p = dur > 0 ? Math.min(1, cur / dur) : 0;
+  $('scrubFill').style.width = (p * 100) + '%';
+  $('scrubHead').style.left = (p * 100) + '%';
+}
+
+/* ===================== 绘制 ===================== */
+function draw(showSelection){
+  if (showSelection === undefined) showSelection = true;
+  var W = canvas.width, H = canvas.height;
+
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = 1;
+  ctx.clearRect(0, 0, W, H);
+
+  var v = state.videoEl;
+  if (v && v.readyState >= 2){
+    try { ctx.drawImage(v, 0, 0, W, H); }
+    catch(e){ ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H); }
+  } else {
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  Object.keys(SLOT_DEFS).forEach(function(key){
+    var a = state.assets[key];
+    if (!a || !a.visible) return;
+    ctx.globalAlpha = 1;
+    ctx.drawImage(a.img, a.x, a.y, a.canvasW * a.scale, a.canvasH * a.scale);
+  });
+  ctx.globalAlpha = 1;
+
+  // 居中参考线：只在实际移动时出现，导出时不画
+  if (showSelection && state.guides && (state.guides.v || state.guides.h)){
+    var gw = Math.max(1, W / 1280);
+    ctx.save();
+    ctx.strokeStyle = '#ff9500';
+    ctx.lineWidth = gw * 1.5;
+    ctx.globalAlpha = 0.95;
+    if (state.guides.v){
+      var vx = Math.round(W / 2) + 0.5;
+      ctx.beginPath(); ctx.moveTo(vx, 0); ctx.lineTo(vx, H); ctx.stroke();
+    }
+    if (state.guides.h){
+      var hy = Math.round(H / 2) + 0.5;
+      ctx.beginPath(); ctx.moveTo(0, hy); ctx.lineTo(W, hy); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  if (showSelection && state.selectedKey){
+    var sel = state.assets[state.selectedKey];
+    if (sel && sel.visible){
+      var s = sel.scale;
+      var bx = sel.x + sel.contentBox.x * s;
+      var by = sel.y + sel.contentBox.y * s;
+      var bw = sel.contentBox.w * s;
+      var bh = sel.contentBox.h * s;
+
+      var lw = Math.max(1, W / 900);
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255,59,92,.95)';
+      ctx.lineWidth = lw;
+      ctx.setLineDash([6 * lw, 4 * lw]);
+      ctx.strokeRect(bx + 0.5, by + 0.5, bw, bh);
+      ctx.restore();
+
+      ctx.save();
+      ctx.fillStyle = 'rgba(255,59,92,.95)';
+      var cs = Math.max(3, W / 340);
+      [[bx, by], [bx + bw, by], [bx, by + bh], [bx + bw, by + bh]].forEach(function(p){
+        ctx.fillRect(p[0] - cs / 2, p[1] - cs / 2, cs, cs);
+      });
+      ctx.restore();
+    }
+  }
+}
+
+/* ===================== 微调面板 ===================== */
+function updateTweakPanel(){
+  var key = state.selectedKey;
+  var a = key ? state.assets[key] : null;
+  var panel = $('tweak');
+
+  if (!a){ panel.classList.remove('on'); return; }
+  panel.classList.add('on');
+  $('tweakTitle').textContent = SLOT_DEFS[key].label;
+  $('inX').value = Math.round(a.x);
+  $('inY').value = Math.round(a.y);
+  $('inS').value = Math.round(a.scale * 1000) / 10;
+}
+
+// X / Y / 缩放：缩放后自动重新锚定，居中元素永远居中、角标永远贴角
+function bindNum(id, prop){
+  $(id).addEventListener('input', function(){
+    var key = state.selectedKey;
+    var a = key ? state.assets[key] : null;
+    if (!a) return;
+    var v = parseFloat(this.value);
+    if (!isFinite(v)) return;
+
+    if (prop === 'scale'){
+      if (v <= 0) return;
+      a.scale = v / 100;
+      // 缩放后重新算锚定位置，保留已有偏移量
+      applyAnchor(key);
+    } else {
+      // 输入的是「内容」的目标坐标，换算成相对锚定点的偏移
+      var base = anchoredPos(key, a);
+      var cb = a.contentBox;
+      var contentBase = (prop === 'x')
+        ? base.x + cb.x * a.scale
+        : base.y + cb.y * a.scale;
+
+      if (prop === 'x') a.dx = (a.dx || 0) + (v - contentBase);
+      else              a.dy = (a.dy || 0) + (v - contentBase);
+
+      applyAnchor(key);
+    }
+    a.tweaked = true;
+    updateTweakPanel();
+    draw();
+  });
+}
+bindNum('inX', 'x');
+bindNum('inY', 'y');
+bindNum('inS', 'scale');
+
+// ---- 标签拖动调节：按住 X / Y / 缩放 横向拖，直接改值 ----
+// X / Y：1px = 1 像素；缩放：1px = 1%
+// 按住 Shift 加速 10 倍
+function bindScrub(labelId, prop){
+  var lbl = $(labelId);
+  var numBox = lbl.parentNode;
+  var drag = null;
+
+  lbl.addEventListener('pointerdown', function(e){
+    if (e.button !== 0) return;
+    var key = state.selectedKey;
+    var a = key ? state.assets[key] : null;
+    if (!a) return;
+
+    e.preventDefault();
+    drag = {
+      startX: e.clientX,
+      startScale: a.scale,
+      startDx: a.dx || 0,
+      startDy: a.dy || 0
+    };
+
+    try { lbl.setPointerCapture(e.pointerId); } catch(err){}
+    lbl.classList.add('scrubbing');
+    numBox.classList.add('scrubbing');
+    document.body.classList.add('scrubbing');
+  });
+
+  lbl.addEventListener('pointermove', function(e){
+    if (!drag) return;
+    var key = state.selectedKey;
+    var a = key ? state.assets[key] : null;
+    if (!a) return;
+
+    var delta = e.clientX - drag.startX;
+    var k = e.shiftKey ? 10 : 1;
+
+    if (prop === 'scale'){
+      // 缩放：以拖拽起点为基准，避免累积误差
+      var pct = drag.startScale * 100 + delta * k;
+      if (pct < 1) pct = 1;
+      if (pct > 2000) pct = 2000;
+      a.scale = pct / 100;
+      applyAnchor(key);
+      snapToCenter(key);
+    } else if (prop === 'x'){
+      a.dx = drag.startDx + delta * k;
+      applyAnchor(key);
+      snapToCenter(key);
+    } else {
+      a.dy = drag.startDy + delta * k;
+      applyAnchor(key);
+      snapToCenter(key);
+    }
+
+    a.tweaked = true;
+    updateTweakPanel();
+    draw();
+  });
+
+  function endDrag(e){
+    if (!drag) return;
+    drag = null;
+    try { lbl.releasePointerCapture(e.pointerId); } catch(err){}
+    lbl.classList.remove('scrubbing');
+    numBox.classList.remove('scrubbing');
+    document.body.classList.remove('scrubbing');
+    clearGuides();
+  }
+
+  lbl.addEventListener('pointerup', endDrag);
+  lbl.addEventListener('pointercancel', endDrag);
+}
+
+bindScrub('lblX', 'x');
+bindScrub('lblY', 'y');
+bindScrub('lblS', 'scale');
+
+$('resetOne').addEventListener('click', function(){
+  var key = state.selectedKey;
+  if (!key) return;
+  placeAsset(key);
+  updateTweakPanel();
+  draw();
+  toast('已恢复默认位置', 'ok');
+});
+
+/* ===================== 画布交互 ===================== */
+var drag = null;
+
+function toCanvas(e){
+  var r = canvas.getBoundingClientRect();
+  return {
+    x: (e.clientX - r.left) / r.width * canvas.width,
+    y: (e.clientY - r.top) / r.height * canvas.height
+  };
+}
+
+function hitTest(pt){
+  var keys = Object.keys(SLOT_DEFS);
+  for (var i = keys.length - 1; i >= 0; i--){
+    var key = keys[i];
+    var a = state.assets[key];
+    if (!a || !a.visible) continue;
+    var s = a.scale;
+    var bx = a.x + a.contentBox.x * s;
+    var by = a.y + a.contentBox.y * s;
+    var bw = a.contentBox.w * s;
+    var bh = a.contentBox.h * s;
+    if (pt.x >= bx && pt.x <= bx + bw && pt.y >= by && pt.y <= by + bh) return key;
+  }
+  return null;
+}
+
+canvas.addEventListener('mousedown', function(e){
+  if (state.exporting) return;
+  var pt = toCanvas(e);
+  var key = hitTest(pt);
+
+  state.selectedKey = key;
+  updateTweakPanel();
+
+  if (!key){ draw(); return; }
+
+  var a = state.assets[key];
+  drag = {
+    key: key,
+    startX: pt.x, startY: pt.y,
+    odx: a.dx || 0, ody: a.dy || 0
+  };
+  canvas.classList.add('grabbing');
+  draw();
+  e.preventDefault();
+});
+
+window.addEventListener('mousemove', function(e){
+  if (!drag || state.exporting) return;
+  var a = state.assets[drag.key];
+  if (!a) return;
+  var pt = toCanvas(e);
+  // 拖动只改变偏移量，锚定关系不变 —— 之后改缩放仍然会保持居中和贴边
+  a.dx = drag.odx + (pt.x - drag.startX);
+  a.dy = drag.ody + (pt.y - drag.startY);
+  applyAnchor(drag.key);
+  snapToCenter(drag.key);
+  a.tweaked = true;
+  updateTweakPanel();
+  draw();
+});
+
+window.addEventListener('mouseup', function(){
+  if (!drag) return;
+  drag = null;
+  canvas.classList.remove('grabbing');
+  clearGuides();
+});
+
+canvas.addEventListener('mousemove', function(e){
+  if (drag) return;
+  canvas.classList.toggle('grab', !!hitTest(toCanvas(e)));
+});
+
+document.addEventListener('keydown', function(e){
+  if (e.target.tagName === 'INPUT') return;
+  if (state.exporting) return;
+
+  if (e.key === ' '){
+    e.preventDefault();
+    togglePlay();
+    return;
+  }
+
+  var dx = 0, dy = 0;
+  if (e.key === 'ArrowLeft') dx = -1;
+  else if (e.key === 'ArrowRight') dx = 1;
+  else if (e.key === 'ArrowUp') dy = -1;
+  else if (e.key === 'ArrowDown') dy = 1;
+  else return;
+
+  if (!state.selectedKey) return;
+  e.preventDefault();
+  var a = state.assets[state.selectedKey];
+  if (!a) return;
+  var step = e.shiftKey ? 10 : 1;
+  // 方向键同样只改偏移量，锚定关系保持不变
+  a.dx = (a.dx || 0) + dx * step;
+  a.dy = (a.dy || 0) + dy * step;
+  applyAnchor(state.selectedKey);
+  snapToCenter(state.selectedKey);
+  a.tweaked = true;
+  updateTweakPanel();
+  draw();
+
+  // 方向键没有明确的「松手」时机，短暂停留后自动收起参考线
+  clearTimeout(state.guideTimer);
+  state.guideTimer = setTimeout(clearGuides, 700);
+});
+
+/* ===================== 播放 ===================== */
+function togglePlay(){
+  var v = state.videoEl;
+  if (!v || state.exporting) return;
+  if (v.paused){
+    if (v.ended) v.currentTime = 0;
+    v.play().catch(function(){});
+  } else {
+    v.pause();
+  }
+}
+$('playBtn').addEventListener('click', togglePlay);
+
+$('scrub').addEventListener('mousedown', function(e){
+  var v = state.videoEl;
+  if (!v || state.exporting) return;
+  var r = this.getBoundingClientRect();
+  var p = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+  v.currentTime = p * (state.vMeta.duration || 0);
+  updateTimeUI();
+  draw();
+});
+
+/* ===================== 文件输入 ===================== */
+function bindSlot(slotId, inputId, handler){
+  var slot = $(slotId);
+  var input = $(inputId);
+  slot.addEventListener('click', function(e){
+    if (e.target === input) return;
+    input.click();
+  });
+  input.addEventListener('change', function(){
+    if (!this.files.length) return;
+    handler(this.files[0]);
+    this.value = '';
+  });
+}
+
+bindSlot('slotVideo', 'inputVideo', handleVideoFile);
+bindSlot('slotLogo', 'inputLogo', function(f){ handleAsset('logo', f); });
+bindSlot('slotSearch', 'inputSearch', function(f){ handleAsset('search', f); });
+bindSlot('slotCorner', 'inputCorner', function(f){ handleAsset('corner', f); });
+
+// 全局拖放：按文件名自动归类
+var dragDepth = 0;
+window.addEventListener('dragenter', function(e){
+  e.preventDefault(); dragDepth++; $('dragmask').classList.add('on');
+});
+window.addEventListener('dragleave', function(e){
+  e.preventDefault(); dragDepth--;
+  if (dragDepth <= 0){ dragDepth = 0; $('dragmask').classList.remove('on'); }
+});
+window.addEventListener('dragover', function(e){ e.preventDefault(); });
+
+window.addEventListener('drop', async function(e){
+  e.preventDefault();
+  dragDepth = 0;
+  $('dragmask').classList.remove('on');
+
+  var files = Array.prototype.slice.call(e.dataTransfer.files);
+  if (!files.length) return;
+
+  var video = null;
+  var imgs = [];
+  files.forEach(function(f){
+    if (/^video\//.test(f.type)){ if (!video) video = f; }
+    else if (/^image\//.test(f.type)) imgs.push(f);
+  });
+
+  if (video) await handleVideoFile(video);
+
+  // 图片按文件名判断归属，判断不出的按「logo → search → corner」顺序填空位
+  for (var i = 0; i < imgs.length; i++){
+    var f = imgs[i];
+    var key = null;
+    if (/logo|顶部|logo/i.test(f.name)) key = 'logo';
+    else if (/搜索|search|底部/i.test(f.name)) key = 'search';
+    else if (/角标|corner|左下/i.test(f.name)) key = 'corner';
+    else key = ['logo', 'search', 'corner'].filter(function(k){ return !state.assets[k]; })[0] || null;
+
+    if (!key){ toast('素材位已满，' + f.name + ' 未添加', 'err'); continue; }
+    await handleAsset(key, f);
+  }
+
+  if (imgs.length) toast('素材已添加，位置已自动摆好', 'ok');
+});
+
+/* ===================== 导出 ===================== */
+// withAudio 为真时只选明确带音频编码的容器，避免录出无声文件
+function pickMime(withAudio){
+  var withAudioCands = [
+    'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
+    'video/mp4;codecs=avc1.4D401E,mp4a.40.2',
+    'video/mp4;codecs=avc1.64001F,mp4a.40.2',
+    'video/webm;codecs=vp9,opus',
+    'video/webm;codecs=vp8,opus',
+    'video/webm;codecs=h264,opus'
+  ];
+  var plainCands = [
+    'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
+    'video/mp4;codecs=avc1.4D401E,mp4a.40.2',
+    'video/mp4;codecs=avc1',
+    'video/mp4',
+    'video/webm;codecs=vp9,opus',
+    'video/webm;codecs=vp8,opus',
+    'video/webm'
+  ];
+  var cands = withAudio ? withAudioCands : plainCands;
+  for (var i = 0; i < cands.length; i++){
+    try { if (MediaRecorder.isTypeSupported(cands[i])) return cands[i]; } catch(e){}
+  }
+  // 带音频却没有明确支持列表时，退回通用 mp4/webm
+  if (withAudio){
+    var fallback = ['video/mp4', 'video/webm'];
+    for (var j = 0; j < fallback.length; j++){
+      try { if (MediaRecorder.isTypeSupported(fallback[j])) return fallback[j]; } catch(e){}
+    }
+  }
+  return '';
+}
+
+// 拆掉旧的音频图（换视频时用）
+function teardownAudioGraph(){
+  try { if (state.audioSrc) state.audioSrc.disconnect(); } catch(e){}
+  try { if (state.audioDest) state.audioDest.disconnect(); } catch(e){}
+  try { if (state.audioCtx && state.audioCtx.close) state.audioCtx.close(); } catch(e){}
+  state.audioCtx = null;
+  state.audioDest = null;
+  state.audioSrc = null;
+  state.audioVideoEl = null;
+}
+
+// 为当前 video 建立音频图：一条接到扬声器（预览能听见），一条接到录制目标
+// 必须在用户手势的同步调用栈里执行，否则 AudioContext 可能一直 suspended，导出会没声音
+function ensureAudioGraph(v){
+  if (!v) return false;
+  if (state.audioCtx && state.audioVideoEl === v) return true;
+  if (state.audioCtx && state.audioVideoEl !== v) teardownAudioGraph();
+
+  var AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return false;
+  try {
+    var ac = new AC();
+    // 关键：createMediaElementSource 只能对同一个元素调用一次，
+    // 所以换视频必须先拆掉旧图重建，否则新视频没有音轨
+    var src = ac.createMediaElementSource(v);
+    var dest = ac.createMediaStreamDestination();
+    src.connect(ac.destination);
+    src.connect(dest);
+    state.audioCtx = ac;
+    state.audioDest = dest;
+    state.audioSrc = src;
+    state.audioVideoEl = v;
+    return true;
+  } catch(e){
+    return false;
+  }
+}
+
+// 判断视频是否真的有音轨（无音轨的视频导出的音轨是静音，没必要带上）
+function detectAudio(v){
+  try {
+    if (v.webkitAudioDecodedByteCount !== undefined) return v.webkitAudioDecodedByteCount > 0;
+    if (v.mozHasAudio !== undefined) return !!v.mozHasAudio;
+    if (v.audioTracks && v.audioTracks.length !== undefined) return v.audioTracks.length > 0;
+  } catch(e){}
+  return true;    // 判断不了就当有，宁可带上
+}
+
+function setProgress(p){
+  $('progressFill').style.width = (Math.max(0, Math.min(1, p)) * 100) + '%';
+}
+
+async function exportVideo(){
+  if (state.exporting) return;
+  var v = state.videoEl;
+  if (!v){ toast('请先上传视频', 'err'); return; }
+  if (!state.vMeta.duration){ toast('视频时长读取失败', 'err'); return; }
+  if (!window.MediaRecorder || !canvas.captureStream){
+    toast('当前浏览器不支持导出，请用 Chrome 或 Edge 打开', 'err');
+    return;
+  }
+
+  // 关键：音频图必须在点击事件的同步栈里建立并 resume，
+  // 放到 await 之后浏览器会认为不是用户手势，AudioContext 可能一直挂起，导出就没了声音
+  var audioReady = ensureAudioGraph(v);
+  if (audioReady && state.audioCtx && state.audioCtx.state === 'suspended'){
+    try { state.audioCtx.resume(); } catch(e){}
+  }
+
+  state.exporting = true;
+  state.selectedKey = null;
+  updateTweakPanel();
+  draw(false);
+
+  $('exportBtn').disabled = true;
+  $('exportBtn').textContent = '导出中…';
+  $('playBtn').disabled = true;
+  $('progress').classList.add('on');
+  setProgress(0);
+
+  var chunks = [];
+  var rec = null;
+
+  try {
+    v.pause();
+    v.currentTime = 0;
+    await new Promise(function(r){
+      var f = function(){ v.removeEventListener('seeked', f); r(); };
+      v.addEventListener('seeked', f);
+      setTimeout(r, 500);
+    });
+
+    // 音频存在时才用带音频编码的容器，否则视频编码器兼容性更好
+    var withAudio = audioReady && state.hasAudio;
+    var mime = pickMime(withAudio);
+    var opts = { videoBitsPerSecond: 18000000 };
+    if (withAudio){
+      opts.audioBitsPerSecond = 128000;
+    }
+    if (mime) opts.mimeType = mime;
+
+    var canvasStream = canvas.captureStream(30);
+    var tracks = canvasStream.getVideoTracks().slice();
+
+    if (withAudio){
+      try { if (state.audioCtx.state === 'suspended') await state.audioCtx.resume(); } catch(e){}
+      var at = state.audioDest ? state.audioDest.stream.getAudioTracks() : [];
+      tracks = tracks.concat(at);
+    }
+
+    rec = new MediaRecorder(new MediaStream(tracks), opts);
+    rec.ondataavailable = function(e){ if (e.data && e.data.size) chunks.push(e.data); };
+
+    var stopped = new Promise(function(resolve){ rec.onstop = resolve; });
+
+    rec.start(120);
+    await v.play();
+
+    await new Promise(function(resolve){
+      var finish = function(){
+        v.removeEventListener('ended', finish);
+        setTimeout(function(){ try { rec.stop(); } catch(e){} resolve(); }, 260);
+      };
+      v.addEventListener('ended', finish);
+
+      var tick = function(){
+        draw(false);
+        setProgress((v.currentTime || 0) / (state.vMeta.duration || 1));
+        if (!v.ended && !v.paused) requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+
+      setTimeout(function(){
+        if (state.exporting && !v.ended){
+          try { v.pause(); } catch(e){}
+          finish();
+        }
+      }, (state.vMeta.duration + 8) * 1000);
+    });
+
+    await stopped;
+    if (!chunks.length) throw new Error('没有录制到数据');
+
+    var type = rec.mimeType || mime || 'video/webm';
+    var blob = new Blob(chunks, { type: type });
+    var ext = /mp4/i.test(type) ? 'mp4' : 'webm';
+    var filename = state.vMeta.name.replace(/\.[^.]+$/, '') + '_加素材.' + ext;
+
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 60000);
+
+    setProgress(1);
+    toast('导出完成：' + filename + '（' + (blob.size / 1048576).toFixed(1) + ' MB）', 'ok');
+  } catch(err){
+    toast('导出失败：' + err.message, 'err');
+    console.error(err);
+  } finally {
+    if (rec && rec.state !== 'inactive'){ try { rec.stop(); } catch(e){} }
+    state.exporting = false;
+    $('exportBtn').disabled = false;
+    $('exportBtn').textContent = '导出视频';
+    $('playBtn').disabled = false;
+    setTimeout(function(){ $('progress').classList.remove('on'); }, 700);
+    v.currentTime = 0;
+    updateTimeUI();
+    draw();
+  }
+}
+
+$('exportBtn').addEventListener('click', exportVideo);
+
+/* ===================== 初始化 ===================== */
+// 录制能力检测：Safari / Firefox 的 MediaRecorder 支持不完整
+// 导出依赖 canvas.captureStream + MediaRecorder，缺一个就不能用
+(function checkCompat(){
+  var canRecord = !!(window.MediaRecorder && canvas.captureStream);
+  var isSafari = /^((?!chrome|android|crios|fxios|edg).)*safari/i.test(navigator.userAgent);
+  var isFirefox = /firefox|fxios/i.test(navigator.userAgent);
+
+  if (!canRecord || isSafari || isFirefox){
+    var box = $('browserWarn');
+    if (box){
+      box.style.display = 'block';
+      if (!canRecord){
+        box.innerHTML = '<b>当前浏览器不支持导出</b><br>' +
+          '缺少网页录制能力，无法生成视频。<br>' +
+          '<span style="color:#c9a05a">请用 Chrome 或 Edge 打开本文件。</span>';
+      }
+    }
+  }
+
+  // 提前测一下能不能录 mp4，不行就在导出时自动退到 webm
+  state.recordSupported = canRecord;
+})();
+
+draw();
+
+window.addEventListener('beforeunload', function(e){
+  if (state.videoEl || Object.keys(state.assets).length){
+    e.preventDefault();
+    e.returnValue = '';
+  }
+});
+
+})();
+</script>
+</body>
+</html>
