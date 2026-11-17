@@ -71,6 +71,12 @@ body{
 .hint{font-size:10.5px;color:var(--muted);line-height:1.65;margin-top:8px}
 .hint b{color:#b9bfca;font-weight:500}
 
+/* ---------- 导出统计 ---------- */
+.stat{display:flex;align-items:flex-end;justify-content:space-between;gap:10px}
+.stat-main{display:flex;flex-direction:column;gap:3px;min-width:0}
+.stat-main b{font-size:21px;font-weight:600;color:var(--text);font-variant-numeric:tabular-nums;line-height:1}
+.stat-main span{font-size:10.5px;color:var(--muted)}
+
 /* ---------- 微调 ---------- */
 .tweak{display:none;margin-top:10px;padding-top:10px;border-top:1px solid #242832}
 .tweak.on{display:block}
@@ -254,6 +260,20 @@ details .body b{color:#b9bfca;font-weight:500}
             <div class="num"><label id="lblY" title="左右拖动以调整 Y">Y</label><input type="number" id="inY" step="1"></div>
             <div class="num"><label id="lblS" title="左右拖动以缩放">缩放 %</label><input type="number" id="inS" step="1"></div>
           </div>
+        </div>
+      </section>
+
+      <!-- 导出统计 -->
+      <section class="card">
+        <h2>导出统计 <span class="tag" id="statTag">读取中…</span></h2>
+        <div class="stat">
+          <div class="stat-main">
+            <b id="statGlobal">—</b>
+            <span>全站累计导出</span>
+          </div>
+        </div>
+        <div class="hint" style="margin-top:9px">
+          所有人导出成功后都会累加到这个数字。读不到时显示 —，不影响导出。
         </div>
       </section>
 
@@ -1097,6 +1117,118 @@ window.addEventListener('drop', async function(e){
   if (imgs.length) toast('素材已添加，位置已自动摆好', 'ok');
 });
 
+/* ===================== 导出次数统计 ===================== */
+// 本机次数存 localStorage，全站次数走公共计数服务 abacus（无需注册、CORS 全开）
+// 原则：统计永远不能影响导出。网络失败就只显示本机数字，失败的自增攒进 pending 下次补
+var CNT = {
+  ns:  'dapin-jiasucai-wds-2026',       // 命名空间，换掉就是另一套计数
+  key: 'export-success',
+  api: 'https://abacus.jasoncameron.dev',
+  lsLocal:   'dapin_export_local',
+  lsPending: 'dapin_export_pending',
+  maxFlush:  50,                        // 单次最多补 50 条，防止异常数据刷爆接口
+  pushing:   false
+};
+
+var stats = { local: 0, pending: 0, global: null };
+
+function loadStats(){
+  try {
+    stats.local   = parseInt(localStorage.getItem(CNT.lsLocal) || '0', 10) || 0;
+    stats.pending = parseInt(localStorage.getItem(CNT.lsPending) || '0', 10) || 0;
+  } catch(e){ stats.local = 0; stats.pending = 0; }
+  if (stats.local < 0) stats.local = 0;
+  if (stats.pending < 0) stats.pending = 0;
+}
+
+function saveStats(){
+  try {
+    localStorage.setItem(CNT.lsLocal, String(stats.local));
+    localStorage.setItem(CNT.lsPending, String(stats.pending));
+  } catch(e){}      // 隐私模式下 localStorage 可能直接抛错，忽略即可
+}
+
+// 本机次数仍在后台记着（pending 补偿要用），只是不显示
+function renderStats(){
+  var el = $('statLocal');
+  if (el) el.textContent = stats.local;      // 元素被隐藏时跳过，不报错
+
+  $('statGlobal').textContent = (stats.global === null) ? '—' : stats.global;
+
+  var tag = $('statTag');
+  if (stats.global === null){
+    tag.textContent = stats.pending > 0 ? ('待同步 ' + stats.pending) : '读取失败';
+    tag.className = 'tag';
+  } else {
+    tag.textContent = '已同步';
+    tag.className = 'tag ok';
+  }
+}
+
+// 带超时的 fetch：计数服务卡住时不拖着页面
+function fetchTimeout(url, ms){
+  return new Promise(function(resolve, reject){
+    var done = false;
+    var timer = setTimeout(function(){
+      if (!done){ done = true; reject(new Error('timeout')); }
+    }, ms || 6000);
+    fetch(url, { cache:'no-store' }).then(function(r){
+      if (!done){ done = true; clearTimeout(timer); resolve(r); }
+    }).catch(function(err){
+      if (!done){ done = true; clearTimeout(timer); reject(err); }
+    });
+  });
+}
+// 只读取全站数字，不自增
+async function fetchGlobal(){
+  if (!window.fetch) return;
+  try {
+    var r = await fetchTimeout(CNT.api + '/get/' + CNT.ns + '/' + CNT.key, 6000);
+    if (r.status === 404){ stats.global = 0; renderStats(); return; }   // 还没人导出过
+    if (!r.ok) return;
+    var j = await r.json();
+    if (typeof j.value === 'number'){ stats.global = j.value; renderStats(); }
+  } catch(e){}      // 读不到就保持 '—'，不报错不打扰
+}
+
+// 把 pending 推到全站计数。/hit 一次只加 1，所以攒了几条就调几次
+async function pushPending(){
+  if (CNT.pushing || !window.fetch) return;
+  if (stats.pending <= 0) return;
+
+  CNT.pushing = true;
+  try {
+    var todo = Math.min(stats.pending, CNT.maxFlush);
+    for (var i = 0; i < todo; i++){
+      var r = await fetchTimeout(CNT.api + '/hit/' + CNT.ns + '/' + CNT.key, 6000);
+      if (!r.ok) break;                       // 失败就停，剩下的留给下次
+      var j = await r.json();
+      // 成功一条就立刻落盘，中途关页面也不会重复计
+      stats.pending--;
+      if (stats.pending < 0) stats.pending = 0;
+      saveStats();
+      if (typeof j.value === 'number') stats.global = j.value;
+      renderStats();
+    }
+  } catch(e){
+  } finally {
+    CNT.pushing = false;
+  }
+}
+
+// 导出成功后调这一个函数：本机 +1，再尽力同步全站
+function countExportSuccess(){
+  stats.local++;
+  stats.pending++;
+  saveStats();
+  renderStats();
+  pushPending();      // 故意不 await，导出流程不等网络
+}
+
+loadStats();
+renderStats();
+fetchGlobal().then(function(){ pushPending(); });
+
 /* ===================== 导出 ===================== */
 // withAudio 为真时只选明确带音频编码的容器，避免录出无声文件
 function pickMime(withAudio){
@@ -1289,6 +1421,7 @@ async function exportVideo(){
     setTimeout(function(){ URL.revokeObjectURL(url); }, 60000);
 
     setProgress(1);
+    countExportSuccess();     // 文件已经触发下载，这里才算一次成功导出
     toast('导出完成：' + filename + '（' + (blob.size / 1048576).toFixed(1) + ' MB）', 'ok');
   } catch(err){
     toast('导出失败：' + err.message, 'err');
